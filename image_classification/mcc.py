@@ -141,10 +141,13 @@ def main(args: argparse.Namespace):
         # evaluate on source validation set
         acc1_s, acc_global_s, acc_s, iu_s = utils.validate(test_source_loader, classifier, args, device)
 
-        wandb.log({ 
-            "validation accuracy (target)" : acc1,
-            "validation accuracy (source)" : acc1_s
-        })
+        logged_metrics = [("validation accuracy (target)", acc1), ("validation accuracy (source)", acc1_s)]
+        logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(class_names, acc) ]
+        logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(class_names, acc_s) ]
+
+        log_ = { pair[0] : pair[1] for pair in logged_metrics }
+
+        wandb.log(log_)
 
         # remember best acc@1 and save checkpoint
         torch.save(classifier.state_dict(), logger.get_checkpoint_path('latest'))
