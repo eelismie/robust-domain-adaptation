@@ -20,8 +20,3 @@ wandb login
 
 If you want to see metrics, you will need to place an API key from weights and biases into the prompt. Alternatively select the prompt that allows you to not log metrics. 
 
-
-## Running experiments
-
-All experiments are set up as python scripts that submit a set of batch jobs on slurm, then output the results.
-
