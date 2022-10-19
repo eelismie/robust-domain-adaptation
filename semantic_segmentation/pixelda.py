@@ -42,14 +42,14 @@ parser.add_argument("--sample_interval", type=int, default=300, help="interval b
 opt = parser.parse_args()
 print(opt)
 
-wandb.config = {
-    "learning_rate": args.lr,
-    "epochs": args.n_epochs
-}
-
 # Calculate output of image discriminator (PatchGAN)
 patch = int(opt.img_size / 2 ** 4)
 patch = (1, patch, patch)
+
+wandb.config = {
+    "learning_rate": opt.lr,
+    "epochs": opt.n_epochs
+}
 
 cuda = True if torch.cuda.is_available() else False
 
@@ -195,10 +195,28 @@ dataloader_A = torch.utils.data.DataLoader(
 )
 
 os.makedirs("data/mnistm", exist_ok=True)
+
 dataloader_B = torch.utils.data.DataLoader(
     MNISTM(
         "data/mnistm",
         train=True,
+        download=True,
+        transform=transforms.Compose(
+            [
+                transforms.Resize(opt.img_size),
+                transforms.ToTensor(),
+                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+            ]
+        ),
+    ),
+    batch_size=opt.batch_size,
+    shuffle=True,
+)
+
+dataloader_B_test = torch.utils.data.DataLoader(
+    MNISTM(
+        "data/mnistm",
+        train=False,
         download=True,
         transform=transforms.Compose(
             [
