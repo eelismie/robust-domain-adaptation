@@ -382,8 +382,8 @@ for epoch in range(opt.n_epochs):
     global_acc_b, per_class_b = validate(dataloader_B_test, classifier, opt, device)
 
     logged_metrics = [("validation accuracy (target)", global_acc_a), ("validation accuracy (source)", global_acc_b)]
-    logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(args.class_names, per_class_a) ]
-    logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(args.class_names, per_class_b) ]
+    logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(opt.class_names, per_class_a) ]
+    logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(opt.class_names, per_class_b) ]
 
     log_ = { pair[0] : pair[1] for pair in logged_metrics }
 
