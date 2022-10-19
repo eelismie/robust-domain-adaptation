@@ -269,7 +269,7 @@ def validate(val_loader, model, args, device) -> float:
     model.train()
     acc = accuracy.compute()
     confusion = confmat.compute()
-    return acc.cpu().numpy()[0], torch.diag(confusion, 0).cpu().numpy().tolist()
+    return acc.cpu().numpy(), torch.diag(confusion, 0).cpu().numpy().tolist()
 
 # Optimizers
 optimizer_G = torch.optim.Adam(
