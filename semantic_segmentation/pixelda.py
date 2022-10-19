@@ -10,12 +10,12 @@ import itertools
 
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
-
 from torch.utils.data import DataLoader
 from torchvision import datasets
 from torch.autograd import Variable
-
 from mnistm import MNISTM
+
+from torchmetrics import ConfusionMatrix, Accuracy
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -40,6 +40,8 @@ parser.add_argument("--channels", type=int, default=3, help="number of image cha
 parser.add_argument("--n_classes", type=int, default=10, help="number of classes in the dataset")
 parser.add_argument("--sample_interval", type=int, default=300, help="interval betwen image samples")
 opt = parser.parse_args()
+opt.class_names = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+
 print(opt)
 
 # Calculate output of image discriminator (PatchGAN)
@@ -52,7 +54,7 @@ wandb.config = {
 }
 
 cuda = True if torch.cuda.is_available() else False
-
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def weights_init_normal(m):
     classname = m.__class__.__name__
@@ -194,6 +196,19 @@ dataloader_A = torch.utils.data.DataLoader(
     shuffle=True,
 )
 
+dataloader_A_test = torch.utils.data.DataLoader(
+    datasets.MNIST(
+        "data/mnist",
+        train=False,
+        download=True,
+        transform=transforms.Compose(
+            [transforms.Resize(opt.img_size), transforms.ToTensor(), transforms.Normalize([0.5], [0.5])]
+        ),
+    ),
+    batch_size=opt.batch_size,
+    shuffle=True,
+)
+
 os.makedirs("data/mnistm", exist_ok=True)
 
 dataloader_B = torch.utils.data.DataLoader(
@@ -230,6 +245,32 @@ dataloader_B_test = torch.utils.data.DataLoader(
     shuffle=True,
 )
 
+def validate(val_loader, model, args, device) -> float:
+
+    # switch to evaluate mode
+    model.eval()
+    confmat = ConfusionMatrix(len(args.class_names), normalize='true').to(device)
+    accuracy = Accuracy(len(args.class_names)).to(device)
+
+    with torch.no_grad():
+        for i, data in enumerate(val_loader):
+            images, target = data[:2]
+            batch_size = images.size(0)
+            images = Variable(images.type(FloatTensor).expand(batch_size, 3, args.img_size, args.img_size))
+            target = Variable(target.type(LongTensor))
+            
+            # compute output
+            output = torch.argmax(model(images), 1) 
+
+            # measure accuracy and record loss
+            accuracy.update(output, target)
+            confmat.update(output, target)
+
+    model.train()
+    acc = accuracy.compute()
+    confusion = confmat.compute()
+    return acc, confusion
+
 # Optimizers
 optimizer_G = torch.optim.Adam(
     itertools.chain(generator.parameters(), classifier.parameters()), lr=opt.lr, betas=(opt.b1, opt.b2)
@@ -248,6 +289,9 @@ task_performance = []
 target_performance = []
 
 for epoch in range(opt.n_epochs):
+
+    global_acc_a, per_class_a = validate(dataloader_A_test, classifier, opt)
+
     for i, ((imgs_A, labels_A), (imgs_B, labels_B)) in enumerate(zip(dataloader_A, dataloader_B)):
 
         batch_size = imgs_A.size(0)
@@ -316,6 +360,8 @@ for epoch in range(opt.n_epochs):
         if len(target_performance) > 100:
             target_performance.pop(0)
 
+        # Evaluate performance in the original Domain A 
+
         print(
             "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f] [CLF acc: %3d%% (%3d%%), target_acc: %3d%% (%3d%%)]"
             % (
@@ -331,8 +377,6 @@ for epoch in range(opt.n_epochs):
                 100 * np.mean(target_performance),
             )
         )
-
-        batches_done = len(dataloader_A) * epoch + i
-        if batches_done % opt.sample_interval == 0:
-            sample = torch.cat((imgs_A.data[:5], fake_B.data[:5], imgs_B.data[:5]), -2)
-            save_image(sample, "images/%d.png" % batches_done, nrow=int(math.sqrt(batch_size)), normalize=True)
+    
+    global_acc_a, per_class_a = validate(dataloader_A_test, classifier, opt)
+    global_acc_b, per_class_b = validate(dataloader_B_test, classifier, opt)
