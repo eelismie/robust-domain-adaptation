@@ -269,7 +269,7 @@ def validate(val_loader, model, args, device) -> float:
     model.train()
     acc = accuracy.compute()
     confusion = confmat.compute()
-    return acc, confusion
+    return acc.cpu().numpy()[0], torch.diag(confusion, 0).cpu().numpy().tolist()
 
 # Optimizers
 optimizer_G = torch.optim.Adam(
@@ -380,3 +380,11 @@ for epoch in range(opt.n_epochs):
     
     global_acc_a, per_class_a = validate(dataloader_A_test, classifier, opt, device)
     global_acc_b, per_class_b = validate(dataloader_B_test, classifier, opt, device)
+
+    logged_metrics = [("validation accuracy (target)", global_acc_a), ("validation accuracy (source)", global_acc_b)]
+    logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(args.class_names, per_class_a) ]
+    logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(args.class_names, per_class_b) ]
+
+    log_ = { pair[0] : pair[1] for pair in logged_metrics }
+
+    wandb.log(log_)
