@@ -290,7 +290,7 @@ target_performance = []
 
 for epoch in range(opt.n_epochs):
 
-    global_acc_a, per_class_a = validate(dataloader_A_test, classifier, opt)
+    global_acc_a, per_class_a = validate(dataloader_A_test, classifier, opt, device)
 
     for i, ((imgs_A, labels_A), (imgs_B, labels_B)) in enumerate(zip(dataloader_A, dataloader_B)):
 
@@ -378,5 +378,5 @@ for epoch in range(opt.n_epochs):
             )
         )
     
-    global_acc_a, per_class_a = validate(dataloader_A_test, classifier, opt)
-    global_acc_b, per_class_b = validate(dataloader_B_test, classifier, opt)
+    global_acc_a, per_class_a = validate(dataloader_A_test, classifier, opt, device)
+    global_acc_b, per_class_b = validate(dataloader_B_test, classifier, opt, device)
