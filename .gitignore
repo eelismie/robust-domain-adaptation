@@ -1,2 +1,4 @@
 logs/*
 image_classification/data/*
+semantic_segmentation/data/*
+dataset_registry/data/*
