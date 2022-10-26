@@ -1,8 +1,6 @@
-import argparse
-import os
 import numpy as np
-import math
 import itertools
+import plotly.express as px 
 
 import torchvision.transforms as transforms
 from torchvision.utils import save_image
@@ -18,6 +16,13 @@ import torch
 
 import wandb
 
+cuda = True if torch.cuda.is_available() else False
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+def plotly_confusion_matrix(confusion_matrix, class_names):
+    fig = px.imshow(np.around(confusion_matrix,3), x=class_names, y=class_names, text_auto=True)
+    return fig
+
 def weights_init_normal(m):
     classname = m.__class__.__name__
     if classname.find("Conv") != -1:
@@ -27,6 +32,9 @@ def weights_init_normal(m):
         torch.nn.init.constant_(m.bias.data, 0.0)
 
 def validate(val_loader, model, args, device):
+
+    FloatTensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
+    LongTensor = torch.cuda.LongTensor if cuda else torch.LongTensor
 
     # switch to evaluate mode
     model.eval()
@@ -50,7 +58,7 @@ def validate(val_loader, model, args, device):
     model.train()
     acc = accuracy.compute()
     confusion = confmat.compute()
-    return acc.cpu().numpy(), torch.diag(confusion, 0).cpu().numpy().tolist()
+    return acc.cpu().numpy(), confusion.cpu().numpy()
 
 def train_pixel_da(
         generator = None, 
@@ -73,9 +81,6 @@ def train_pixel_da(
         "learning_rate": opt["lr"],
         "epochs": opt["num_epochs"]
     }
-
-    cuda = True if torch.cuda.is_available() else False
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Loss function
     adversarial_loss = torch.nn.MSELoss()
@@ -209,13 +214,25 @@ def train_pixel_da(
                 )
             )
         
-        global_acc_a, per_class_a = validate(dataloader_A_test, classifier, opt, device)
-        global_acc_b, per_class_b = validate(dataloader_B_test, classifier, opt, device)
+        global_acc_a, confusion_a = validate(dataloader_A_test, classifier, opt, device)
+        global_acc_b, confusion_b = validate(dataloader_B_test, classifier, opt, device)
 
-        logged_metrics = [("validation accuracy (target)", global_acc_b), ("validation accuracy (source)", global_acc_a)]
+        per_class_a = np.diag(confusion_a).tolist()
+        per_class_b = np.diag(confusion_b).tolist()
+
+        logged_metrics = [ ("validation accuracy (target)", global_acc_b), ("validation accuracy (source)", global_acc_a) ]
         logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(opt["class_names"], per_class_b) ]
         logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(opt["class_names"], per_class_a) ]
 
         log_ = { pair[0] : pair[1] for pair in logged_metrics }
 
         wandb.log(log_)
+
+    global_acc_a, confusion_a = validate(dataloader_A_test, classifier, opt, device)
+    global_acc_b, confusion_b = validate(dataloader_B_test, classifier, opt, device)
+
+    f_a = plotly_confusion_matrix(confusion_a, opt["class_names"])
+    f_b = plotly_confusion_matrix(confusion_a, opt["class_names"])
+
+    wandb.log({"source confusion": wandb.Plotly(f_a)})
+    wandb.log({"target confusion": wandb.Plotly(f_b)})
