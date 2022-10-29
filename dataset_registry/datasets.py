@@ -11,6 +11,7 @@ from torchvision import datasets
 from torch.utils.data import DataLoader
 from tllib.vision.transforms import ResizeImage
 from tllib.vision.datasets.visda2017 import VisDA2017
+from tllib.vision.datasets.digits import SVHN
 from timm.data.auto_augment import auto_augment_transform, rand_augment_transform
 
 def get_train_transform(resizing='default', scale=(0.08, 1.0), ratio=(3. / 4., 4. / 3.), random_horizontal_flip=True,
@@ -89,6 +90,11 @@ def get_val_transform(resizing='default', resize_size=224,
 
 class MNIST():
 
+    """
+    dataset utility class that automatically downloads the mnist dataset into "path"
+    and returns train / test dataloaders
+    """
+
     def __init__(self,path,opt = {}):
         self.path = path 
         self.opt = opt
@@ -132,6 +138,12 @@ class MNIST():
 
 
 class MNIST_M():
+
+
+    """
+    dataset utility class that automatically downloads the mnistm dataset into "path"
+    and returns train / test dataloaders 
+    """
 
     def __init__(self,path,opt = {}):
         self.path = path 
@@ -180,6 +192,11 @@ class MNIST_M():
 
 class VISDA17_real:
 
+    """
+    dataset utility class that automatically downloads the VISDA 2017 real images into "path"
+    and returns train / test dataloaders 
+    """
+
     def __init__(self,path,opt = {}): 
         self.path = path
         self.opt = opt 
@@ -196,8 +213,8 @@ class VISDA17_real:
         test_size = len(dataset) - train_size
         train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
 
-        train.transform = train_transform
-        test.transform = test_transform
+        train.dataset.transform = train_transform
+        test.dataset.transform = test_transform
 
         train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
         test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
@@ -205,6 +222,11 @@ class VISDA17_real:
         return train_loader, test_loader
 
 class VISDA17_synthetic:
+
+    """
+    dataset utility class that automatically downloads the VISDA 2017 simulated images into "path"
+    and returns train / test dataloaders 
+    """
 
     def __init__(self,path,opt = {}): 
         self.path = path
@@ -222,8 +244,8 @@ class VISDA17_synthetic:
         test_size = len(dataset) - train_size
         train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
 
-        train.transform = train_transform
-        test.transform = test_transform
+        train.dataset.transform = train_transform
+        test.dataset.transform = test_transform
 
         train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
         test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
