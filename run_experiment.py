@@ -1,14 +1,17 @@
 import yaml
 import inspect
+import click 
 from model_registry import models
 from dataset_registry import datasets
 from routine_registry import routines 
 
-dict_ = None
-with open("sample.yaml", "r") as stream:
-    dict_ = yaml.safe_load(stream)
 
 def run_checks(dict_): 
+
+    """
+    TODO: check the signature of each of the functions and classes in dict_ and compare them against the provided args
+    """
+
     pass 
 
 def load_models(models_list, glob_params):
@@ -29,7 +32,6 @@ def load_models(models_list, glob_params):
     #the returned list contains name : instance of each class 
     return { k : v for k, v in instantiations }
 
-
 def load_datasets(target_dataset, source_dataset, glob_params):
 
     class_name_t = target_dataset["class_name"]
@@ -49,7 +51,6 @@ def load_datasets(target_dataset, source_dataset, glob_params):
 
     return result
 
-
 def run_routines(routine_list, models, datasets, glob_params):
 
         instances = {**models, **datasets}
@@ -63,8 +64,23 @@ def run_routines(routine_list, models, datasets, glob_params):
             routine = routines.__dict__[routine_name]
             routine(**kwargs)
 
-run_checks(dict_)
-experiment = dict_["experiment"]
-models_list = load_models(experiment["models"], experiment["global_params"])
-datasets_list = load_datasets(experiment["target_dataset"], experiment["source_dataset"], experiment["global_params"])
-run_routines(experiment["routines"], models_list, datasets_list, experiment["global_params"])
+@click.command()
+@click.argument('filename')
+@click.argument('debug', default=False)
+def main(filename, debug):
+
+    dict_ = None
+    with open(filename, "r") as stream:
+        dict_ = yaml.safe_load(stream)
+
+    if (debug):
+        run_checks(dict_)
+
+    experiment = dict_["experiment"]
+    models_list = load_models(experiment["models"], experiment["global_params"])
+    datasets_list = load_datasets(experiment["target_dataset"], experiment["source_dataset"], experiment["global_params"])
+    run_routines(experiment["routines"], models_list, datasets_list, experiment["global_params"])
+
+if __name__ == "__main__":
+    main()
+
