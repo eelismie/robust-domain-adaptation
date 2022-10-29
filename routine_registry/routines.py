@@ -232,7 +232,7 @@ def train_pixel_da(
     global_acc_b, confusion_b = validate(dataloader_B_test, classifier, opt, device)
 
     f_a = plotly_confusion_matrix(confusion_a, opt["class_names"])
-    f_b = plotly_confusion_matrix(confusion_a, opt["class_names"])
+    f_b = plotly_confusion_matrix(confusion_b, opt["class_names"])
 
     wandb.log({"source confusion": wandb.Plotly(f_a)})
     wandb.log({"target confusion": wandb.Plotly(f_b)})
