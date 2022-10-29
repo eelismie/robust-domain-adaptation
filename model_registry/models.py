@@ -2,8 +2,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import torch
-
 import torchvision.transforms as transforms
+import timm
+
 from torchvision.utils import save_image
 from torch.utils.data import DataLoader
 from torchvision import datasets
@@ -25,9 +26,9 @@ class ResidualBlock(nn.Module):
         return x + self.block(x)
 
 
-class Generator(nn.Module):
+class simpleGenerator(nn.Module):
     def __init__(self, opt=None):
-        super(Generator, self).__init__()
+        super(simpleGenerator, self).__init__()
 
         # Fully-connected layer which constructs image channel shaped output from noise
         self.fc = nn.Linear(opt["latent_dim"], opt["channels"] * opt["img_size"] ** 2)
@@ -50,9 +51,9 @@ class Generator(nn.Module):
         return img_
 
 
-class Discriminator(nn.Module):
+class simpleDiscriminator(nn.Module):
     def __init__(self, opt=None):
-        super(Discriminator, self).__init__()
+        super(simpleDiscriminator, self).__init__()
 
         def block(in_features, out_features, normalization=True):
             """Discriminator block"""
@@ -75,9 +76,9 @@ class Discriminator(nn.Module):
         return validity
 
 
-class Classifier(nn.Module):
+class simpleClassifier(nn.Module):
     def __init__(self, opt=None):
-        super(Classifier, self).__init__()
+        super(simpleClassifier, self).__init__()
 
         def block(in_features, out_features, normalization=True):
             """Classifier block"""
@@ -98,3 +99,45 @@ class Classifier(nn.Module):
         feature_repr = feature_repr.view(feature_repr.size(0), -1)
         label = self.output_layer(feature_repr)
         return label
+
+class resnet101classifier(nn.Module):
+
+    def __init__(self, opt = {}):
+        super(resnet101classifier, self).__init__()
+        self.opt = opt
+        backbone = utils.get_model("resnet101", pretrain=opt["pretrain"])
+        pool_layer = nn.Identity()
+        self.model = ImageClassifier(backbone, opt["num_classes"], bottleneck_dim=opt["bottleneck_dim"],
+                                    pool_layer=pool_layer, finetune=opt["pretrain"])
+
+    def forward(self, img):
+        out = self.model(img)
+        return out
+
+class resnet50classifier(nn.Module):
+
+    def __init__(self, opt = {}):
+        super(resnet50classifier, self).__init__()
+        self.opt = opt
+        backbone = utils.get_model("resnet50", pretrain=opt["pretrain"])
+        pool_layer = nn.Identity()
+        self.model = ImageClassifier(backbone, opt["num_classes"], bottleneck_dim=opt["bottleneck_dim"],
+                                    pool_layer=pool_layer, finetune=opt["pretrain"])
+
+    def forward(self, img):
+        out = self.model(img)
+        return out
+
+class resnet18classifier(nn.Module):
+
+    def __init__(self, opt = {}):
+        super(resnet18classifier, self).__init__()
+        self.opt = opt
+        backbone = utils.get_model("resnet18", pretrain=opt["pretrain"])
+        pool_layer = nn.Identity()
+        self.model = ImageClassifier(backbone, opt["num_classes"], bottleneck_dim=opt["bottleneck_dim"],
+                                    pool_layer=pool_layer, finetune=opt["pretrain"])
+
+    def forward(self, img):
+        out = self.model(img)
+        return out

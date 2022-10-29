@@ -4,24 +4,28 @@ experiment:
     path: ~/robust-domain-adaptation/dataset_registry/data/mnist
     train:
       name: MNIST-t
+      transform_args: {} 
     validate:
       name: MNIST-v
+      transform_args: {} 
   target_dataset:
     class_name: MNIST_M
     path: ~/robust-domain-adaptation/dataset_registry/data/mnistm
     train: 
       name: MNISTM-t
+      transform_args: {} 
     validate:
       name: MNISTM-v
+      transform_args: {} 
   models:
-    - Discriminator
-    - Generator
-    - Classifier 
+    - simpleDiscriminator
+    - simpleGenerator
+    - simpleClassifier 
   routines:
     - train_pixel_da:
-        discriminator: Discriminator
-        generator: Generator
-        classifier: Classifier
+        discriminator: simpleDiscriminator
+        generator: simpleGenerator
+        classifier: simpleClassifier
         source_train: MNIST-t
         target_train: MNISTM-t
         source_val: MNIST-v
