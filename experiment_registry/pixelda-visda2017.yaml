@@ -22,36 +22,28 @@ experiment:
   models:
     - simpleDiscriminator
     - simpleGenerator
-    - simpleClassifier 
+    - resnet50classifier 
   routines:
     - train_pixel_da:
         discriminator: simpleDiscriminator
         generator: simpleGenerator
-        classifier: simpleClassifier
+        classifier: resnet18classifier
         source_train: visdas-t
         target_train: visdar-t
         source_val: visdas-v
         target_val: visdar-v
   global_params:
     num_epochs: 1
-    batch_size: 64
+    batch_size: 32
     lr: 0.0002
     b1: 0.5
     b2: 0.999
     n_cpu: 8
-    n_residual_blocks: 6
-    latent_dim: 1024
+    n_residual_blocks: 10
+    latent_dim: 40
     img_size: 224
     channels: 3
-    n_classes: 10
-    class_names:
-      - zero
-      - one
-      - two 
-      - three 
-      - four 
-      - five 
-      - six 
-      - seven
-      - eight
-      - nine 
+    n_classes: 12
+    class_names: []
+    pretrain: true 
+    

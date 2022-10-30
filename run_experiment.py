@@ -56,6 +56,9 @@ def load_datasets(target_dataset, source_dataset, glob_params):
         source_dataset["validate"]["name"] : source_val
     }
 
+    glob_params["n_classes"] = target.n_classes
+    glob_params["class_names"] = target.class_names
+    
     return result
 
 def run_routines(routine_list, models, datasets, glob_params):
@@ -83,8 +86,8 @@ def main(filename, debug):
         run_checks(dict_)
 
     experiment = dict_["experiment"]
-    models_list = load_models(experiment["models"], experiment["global_params"])
     datasets_list = load_datasets(experiment["target_dataset"], experiment["source_dataset"], experiment["global_params"])
+    models_list = load_models(experiment["models"], experiment["global_params"])
     run_routines(experiment["routines"], models_list, datasets_list, experiment["global_params"])
 
 if __name__ == "__main__":

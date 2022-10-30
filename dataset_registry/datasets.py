@@ -98,6 +98,21 @@ class MNIST():
     def __init__(self,path,opt = {}):
         self.path = path 
         self.opt = opt
+
+        self.n_classes = 10 
+        
+        self.class_names = [
+            "0",
+            "1",
+            "2",
+            "3", 
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+        ]
         
     def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
 
@@ -148,6 +163,20 @@ class MNIST_M():
     def __init__(self,path,opt = {}):
         self.path = path 
         self.opt = opt
+        self.n_classes = 10 
+
+        self.class_names = [
+            "0",
+            "1",
+            "2",
+            "3", 
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9"
+        ]
         
     def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
 
@@ -201,6 +230,22 @@ class VISDA17_real:
         self.path = path
         self.opt = opt 
 
+        self.n_classes = 12
+        self.class_names = [
+            'aeroplane', 
+            'bicycle', 
+            'bus', 
+            'car', 
+            'horse', 
+            'knife',
+            'motorcycle', 
+            'person', 
+            'plant', 
+            'skateboard', 
+            'train', 
+            'truck'
+        ]
+
     def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
 
         opt = self.opt
@@ -232,6 +277,22 @@ class VISDA17_synthetic:
         self.path = path
         self.opt = opt 
 
+        self.n_classes = 12
+        self.class_names = [
+            'aeroplane', 
+            'bicycle', 
+            'bus', 
+            'car', 
+            'horse', 
+            'knife',
+            'motorcycle', 
+            'person', 
+            'plant', 
+            'skateboard', 
+            'train', 
+            'truck'
+        ]
+        
     def get_loaders(self, train_transform_args = {}, val_transform_args = {} ):
 
         opt = self.opt

@@ -3,12 +3,14 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import torch
 import torchvision.transforms as transforms
+import torchvision.models as mod
 import timm
 
 from torchvision.utils import save_image
 from torch.utils.data import DataLoader
 from torchvision import datasets
 from torch.autograd import Variable
+from torchvision.models import resnet50, ResNet50_Weights, resnet18, ResNet18_Weights
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_features=64, out_features=64):
@@ -32,7 +34,6 @@ class simpleGenerator(nn.Module):
 
         # Fully-connected layer which constructs image channel shaped output from noise
         self.fc = nn.Linear(opt["latent_dim"], opt["channels"] * opt["img_size"] ** 2)
-
         self.l1 = nn.Sequential(nn.Conv2d(opt["channels"] * 2, 64, 3, 1, 1), nn.ReLU(inplace=True))
 
         resblocks = []
@@ -100,44 +101,38 @@ class simpleClassifier(nn.Module):
         label = self.output_layer(feature_repr)
         return label
 
-class resnet101classifier(nn.Module):
+class resnet18classifier(nn.Module):
+    def __init__(self, opt={}):
+        super(resnet18classifier, self).__init__()
+        weights = None 
+        if opt["pretrain"]:
+            weights = ResNet18_Weights.DEFAULT
+        self.backbone = mod.resnet18(weights=weights)
+        self.head = nn.Linear(self.backbone.fc.out_features, opt["n_classes"])
 
-    def __init__(self, opt = {}):
-        super(resnet101classifier, self).__init__()
-        self.opt = opt
-        backbone = utils.get_model("resnet101", pretrain=opt["pretrain"])
-        pool_layer = nn.Identity()
-        self.model = ImageClassifier(backbone, opt["num_classes"], bottleneck_dim=opt["bottleneck_dim"],
-                                    pool_layer=pool_layer, finetune=opt["pretrain"])
-
-    def forward(self, img):
-        out = self.model(img)
+    def forward(self, x):
+        out = self.head(self.backbone(x))
         return out
 
 class resnet50classifier(nn.Module):
-
-    def __init__(self, opt = {}):
+    def __init__(self, opt={}):
         super(resnet50classifier, self).__init__()
-        self.opt = opt
-        backbone = utils.get_model("resnet50", pretrain=opt["pretrain"])
-        pool_layer = nn.Identity()
-        self.model = ImageClassifier(backbone, opt["num_classes"], bottleneck_dim=opt["bottleneck_dim"],
-                                    pool_layer=pool_layer, finetune=opt["pretrain"])
+        weights = None 
+        if opt["pretrain"]:
+            weights = ResNet50_Weights.DEFAULT
+        self.backbone = mod.resnet50(weights=weights)
+        self.head = nn.Linear(self.backbone.fc.out_features, opt["n_classes"])
 
-    def forward(self, img):
-        out = self.model(img)
+    def forward(self, x):
+        out = self.head(self.backbone(x))
         return out
 
-class resnet18classifier(nn.Module):
+class resnet101classifier(nn.Module):
+    def __init__(self, opt={}):
+        super(resnet101classifier, self).__init__()
+        self.backbone = mod.resnet101(pretrained=opt["pretrain"])
+        self.head = nn.Linear(self.backbone.fc.out_features, opt["n_classes"])
 
-    def __init__(self, opt = {}):
-        super(resnet18classifier, self).__init__()
-        self.opt = opt
-        backbone = utils.get_model("resnet18", pretrain=opt["pretrain"])
-        pool_layer = nn.Identity()
-        self.model = ImageClassifier(backbone, opt["num_classes"], bottleneck_dim=opt["bottleneck_dim"],
-                                    pool_layer=pool_layer, finetune=opt["pretrain"])
-
-    def forward(self, img):
-        out = self.model(img)
+    def forward(self, x):
+        out = self.head(self.backbone(x))
         return out

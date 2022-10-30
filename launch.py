@@ -4,7 +4,8 @@ base_path = "/home/mielonen/robust-domain-adaptation"
 
 experiment_list = [
     "experiment_registry/pixelda-mnist-reverse.yaml",
-    "experiment_registry/pixelda-mnist.yaml"
+    "experiment_registry/pixelda-mnist.yaml",
+    "experiment_registry/pixelda-visda2017.yaml"
 ]
 
 for experiment_path in experiment_list:

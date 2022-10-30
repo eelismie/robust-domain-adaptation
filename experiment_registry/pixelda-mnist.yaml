@@ -42,14 +42,4 @@ experiment:
     img_size: 32
     channels: 3
     n_classes: 10
-    class_names:
-      - zero
-      - one
-      - two 
-      - three 
-      - four 
-      - five 
-      - six 
-      - seven
-      - eight
-      - nine 
+    class_names: []

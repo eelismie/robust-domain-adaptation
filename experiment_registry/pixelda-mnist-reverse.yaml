@@ -41,15 +41,5 @@ experiment:
     latent_dim: 10
     img_size: 32
     channels: 3
+    class_names: []
     n_classes: 10
-    class_names:
-      - zero
-      - one
-      - two 
-      - three 
-      - four 
-      - five 
-      - six 
-      - seven
-      - eight
-      - nine 
