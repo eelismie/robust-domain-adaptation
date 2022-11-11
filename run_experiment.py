@@ -1,5 +1,4 @@
 import yaml
-import inspect
 import click 
 from model_registry import models
 from dataset_registry import datasets
