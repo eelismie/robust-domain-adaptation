@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets
 from torch.autograd import Variable
 from tllib.self_training.mcc import ImageClassifier
+from tllib.alignment.mdd import ImageClassifier as ImageClassifiermdd
 from torchvision.models import resnet50, ResNet50_Weights, resnet18, ResNet18_Weights
 
 def get_model(model_name, pretrain=True):
@@ -95,7 +96,17 @@ class tlibClassifier(nn.Module):
     def __init__(self, opt=None) -> None:
         super(tlibClassifier, self).__init__()
         backbone = get_model(opt["arch"], pretrain=opt["pretrain"])
-        self.model = ImageClassifier(backbone, opt["n_classes"], finetune=opt["pretrain"])
+        self.model = ImageClassifier(backbone, opt["n_classes"], finetune=opt["pretrain"], bottleneck_dim=1024)
+
+    def forward(self, x):
+        out = self.model(x)
+        return out
+
+class tlibClassifiermdd(nn.Module):
+    def __init__(self, opt=None) -> None:
+        super(tlibClassifiermdd, self).__init__()
+        backbone = get_model(opt["arch"], pretrain=opt["pretrain"])
+        self.model = ImageClassifiermdd(backbone, opt["n_classes"], finetune=opt["pretrain"], bottleneck_dim=1024, width=1024)
 
     def forward(self, x):
         out = self.model(x)
