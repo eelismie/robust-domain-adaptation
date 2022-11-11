@@ -2,19 +2,16 @@ import numpy as np
 import itertools
 import plotly.express as px 
 
-import torchvision.transforms as transforms
-from torchvision.utils import save_image
-from torch.utils.data import DataLoader
-from torchvision import datasets
 from torch.autograd import Variable
-from tllib.utils.data import ForeverDataIterator
 from torch.optim import SGD
 from torch.optim.lr_scheduler import LambdaLR
+
+from tllib.utils.data import ForeverDataIterator
+from tllib.alignment.mdd import ClassificationMarginDisparityDiscrepancy as MarginDisparityDiscrepancy
 
 from tllib.self_training._loss import MinimumClassConfusionLoss
 from torchmetrics import ConfusionMatrix, Accuracy
 
-import torch.nn as nn
 import torch.nn.functional as F
 import torch
 
@@ -76,15 +73,13 @@ def train_pixel_da(
         ):
 
     wandb.init(project="robust-domain-adaptation")
+    wandb.config = opt
 
     # Calculate output of image discriminator (PatchGAN)
     patch = int(opt["img_size"] / 2 ** 4)
     patch = (1, patch, patch)
 
-    wandb.config = {
-        "learning_rate": opt["lr"],
-        "epochs": opt["num_epochs"]
-    }
+    wandb.config = opt
 
     # Loss function
     adversarial_loss = torch.nn.MSELoss()
@@ -250,20 +245,29 @@ def train_mcc(
     opt = None
     ):
 
+    """
+    modified from mcc.py in ttlib / transfer learning library
+
+    @author: Junguang Jiang
+    @contact: JiangJunguang1123@outlook.com
+    """
+
+    wandb.init(project="robust-domain-adaptation")
+    wandb.config = opt
+
     classifier.train()
 
     train_source_iter = ForeverDataIterator(source_train)
     train_target_iter = ForeverDataIterator(target_train)
 
     classifier = classifier.to(device)
-    classifier.train()
 
     # define optimizer and lr scheduler
     optimizer = SGD(classifier.get_parameters(), opt["lr"], momentum=opt["momentum"], weight_decay=opt["weight_decay"],nesterov=True)
     lr_scheduler = LambdaLR(optimizer, lambda x: opt["lr"] * (1. + opt["lr_gamma"] * float(x)) ** (-opt["lr_decay"]))
     mcc_loss = MinimumClassConfusionLoss(temperature=opt["temperature"])
 
-    for e in range(opt["epochs"])
+    for e in range(opt["epochs"]):
         for i in range(opt["iters_per_epoch"]):
             x_s, labels_s = next(train_source_iter)[:2]
             x_t, = next(train_target_iter)[:1]
@@ -279,10 +283,74 @@ def train_mcc(
 
             cls_loss = F.cross_entropy(y_s, labels_s)
             transfer_loss = mcc_loss(y_t)
-            loss = cls_loss + transfer_loss * args.trade_off
+            loss = cls_loss + transfer_loss * opt["trade_off"]
 
             # compute gradient and do SGD step
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             lr_scheduler.step()
+
+
+def train_mdd(
+    classifier = None,
+    source_train = None,
+    target_train = None,
+    source_val = None,
+    target_val = None,
+    opt = None
+    ):
+
+    """
+    modified from mdd.py in ttlib / transfer learning library
+    
+    @author: Junguang Jiang
+    @contact: JiangJunguang1123@outlook.com
+    """
+
+    wandb.init(project="robust-domain-adaptation")
+    wandb.config = opt
+
+    classifier.train()
+
+    train_source_iter = ForeverDataIterator(source_train)
+    train_target_iter = ForeverDataIterator(target_train)
+
+    classifier = classifier.to(device)
+
+    # define optimizer and lr scheduler
+    mdd = MarginDisparityDiscrepancy(opt["margin"]).to(device)
+    optimizer = SGD(classifier.get_parameters(), opt["lr"], momentum=opt["momentum"], weight_decay=opt["weight_decay"], nesterov=True)
+    lr_scheduler = LambdaLR(optimizer, lambda x: opt["lr"] * (1. + opt["lr_gamma"] * float(x)) ** (-opt["lr_decay"]))
+
+    for e in range(opt["epochs"]):
+        for i in range(opt["iters_per_epoch"]):
+
+            optimizer.zero_grad()
+
+            x_s, labels_s = next(train_source_iter)[:2]
+            x_t, = next(train_target_iter)[:1]
+
+            x_s = x_s.to(device)
+            x_t = x_t.to(device)
+            labels_s = labels_s.to(device)
+
+            # compute output
+            x = torch.cat((x_s, x_t), dim=0)
+            outputs, outputs_adv = classifier(x)
+            y_s, y_t = outputs.chunk(2, dim=0)
+            y_s_adv, y_t_adv = outputs_adv.chunk(2, dim=0)
+
+            # compute cross entropy loss on source domain
+            cls_loss = F.cross_entropy(y_s, labels_s)
+            # compute margin disparity discrepancy between domains
+            # for adversarial classifier, minimize negative mdd is equal to maximize mdd
+            transfer_loss = -mdd(y_s, y_s_adv, y_t, y_t_adv)
+            loss = cls_loss + transfer_loss * opt["trade_off"]
+            classifier.step()
+
+            # compute gradient and do SGD step
+            loss.backward()
+            optimizer.step()
+            lr_scheduler.step()
+
