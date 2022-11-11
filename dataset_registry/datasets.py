@@ -11,12 +11,14 @@ from torchvision import datasets
 from torch.utils.data import DataLoader
 from tllib.vision.transforms import ResizeImage
 from tllib.vision.datasets.visda2017 import VisDA2017
-from tllib.vision.datasets.digits import SVHN
+from tllib.vision.datasets.digits import SVHN, USPS
+from tllib.vision.datasets.office31 import Office31
+from tllib.vision.datasets.pacs import PACS
 from timm.data.auto_augment import auto_augment_transform, rand_augment_transform
 
 def get_train_transform(resizing='default', scale=(0.08, 1.0), ratio=(3. / 4., 4. / 3.), random_horizontal_flip=True,
                         random_color_jitter=False, resize_size=224, norm_mean=(0.485, 0.456, 0.406),
-                        norm_std=(0.229, 0.224, 0.225), auto_augment=None):
+                        norm_std=(0.229, 0.224, 0.225), auto_augment=None, no_change=False):
     """
     resizing mode:
         - default: resize the image to 256 and take a random resized crop of size 224;
@@ -63,11 +65,13 @@ def get_train_transform(resizing='default', scale=(0.08, 1.0), ratio=(3. / 4., 4
         T.ToTensor(),
         T.Normalize(mean=norm_mean, std=norm_std)
     ])
+    if (no_change):
+        return T.Compose([T.ToTensor()])
     return T.Compose(transforms)
 
 
 def get_val_transform(resizing='default', resize_size=224,
-                      norm_mean=(0.485, 0.456, 0.406), norm_std=(0.229, 0.224, 0.225)):
+                      norm_mean=(0.485, 0.456, 0.406), norm_std=(0.229, 0.224, 0.225), no_change=False):
     """
     resizing mode:
         - default: resize the image to 256 and take the center crop of size 224;
@@ -82,8 +86,10 @@ def get_val_transform(resizing='default', resize_size=224,
         transform = ResizeImage(resize_size)
     else:
         raise NotImplementedError(resizing)
-    return T.Compose([
-        transform,
+
+    if (no_change):
+        return T.Compose([T.ToTensor()])
+    return T.Compose([transform,
         T.ToTensor(),
         T.Normalize(mean=norm_mean, std=norm_std)
     ])
@@ -313,3 +319,148 @@ class VISDA17_synthetic:
 
         return train_loader, test_loader
 
+class PACS_P:
+
+    """
+    Photos from PACS dataset
+    """
+
+    def __init__(self,path,opt = {}): 
+        self.path = path
+        self.opt = opt 
+        self.class_names = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person']
+        self.n_classes = 7
+
+    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
+        opt = self.opt
+        dataset = PACS(self.path, "P", download=True)
+
+        train_transform = get_train_transform(**train_transform_args)
+        test_transform = get_val_transform(**val_transform_args)
+
+        train_size = int(0.8 * len(dataset))
+        test_size = len(dataset) - train_size
+        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
+
+        train.dataset.transform = train_transform
+        test.dataset.transform = test_transform
+
+        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
+        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
+
+        return train_loader, test_loader
+
+class PACS_A:
+
+    """
+    Artistics renditions from PACS dataset
+    """
+
+    def __init__(self,path,opt = {}): 
+        self.path = path
+        self.opt = opt 
+        self.class_names = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person']
+        self.n_classes = 7
+
+    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
+        opt = self.opt
+        dataset = PACS(self.path, "A", download=True)
+
+        train_transform = get_train_transform(**train_transform_args)
+        test_transform = get_val_transform(**val_transform_args)
+
+        train_size = int(0.8 * len(dataset))
+        test_size = len(dataset) - train_size
+        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
+
+        train.dataset.transform = train_transform
+        test.dataset.transform = test_transform
+
+        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
+        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
+
+        return train_loader, test_loader
+
+
+class Office_31_A:
+
+    def __init__(self,path, opt = {}): 
+        self.path = path
+        self.opt = opt 
+
+    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
+        opt = self.opt
+        dataset = Office31(self.path, "A", download=True)
+        self.n_classes = dataset.num_classes
+        self.class_names = dataset.classes 
+
+        train_transform = get_train_transform(**train_transform_args)
+        test_transform = get_val_transform(**val_transform_args)
+
+        train_size = int(0.8 * len(dataset))
+        test_size = len(dataset) - train_size
+        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
+
+        train.dataset.transform = train_transform
+        test.dataset.transform = test_transform
+
+        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
+        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
+
+        return train_loader, test_loader
+
+class Office_31_W:
+
+    def __init__(self,path,opt = {}): 
+        self.path = path
+        self.opt = opt 
+
+    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
+
+        opt = self.opt
+        dataset = Office31(self.path, "W", download=True)
+        self.n_classes = dataset.num_classes
+        self.class_names = dataset.classes 
+
+        train_transform = get_train_transform(**train_transform_args)
+        test_transform = get_val_transform(**val_transform_args)
+
+        train_size = int(0.8 * len(dataset))
+        test_size = len(dataset) - train_size
+        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
+
+        train.dataset.transform = train_transform
+        test.dataset.transform = test_transform
+
+        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
+        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
+
+        return train_loader, test_loader
+
+class Office_31_D:
+
+    def __init__(self,path,opt = {}): 
+        self.path = path
+        self.opt = opt 
+
+    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
+
+        opt = self.opt
+        dataset = Office31(self.path, "D", download=True)
+        self.n_classes = dataset.num_classes
+        self.class_names = dataset.classes 
+
+        train_transform = get_train_transform(**train_transform_args)
+        test_transform = get_val_transform(**val_transform_args)
+
+        train_size = int(0.8 * len(dataset))
+        test_size = len(dataset) - train_size
+        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
+
+        train.dataset.transform = train_transform
+        test.dataset.transform = test_transform
+
+        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
+        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
+
+        return train_loader, test_loader
