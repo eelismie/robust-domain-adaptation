@@ -5,12 +5,29 @@ import torch
 import torchvision.transforms as transforms
 import torchvision.models as mod
 import timm
+import tllib.vision.models as models_
 
 from torchvision.utils import save_image
 from torch.utils.data import DataLoader
 from torchvision import datasets
 from torch.autograd import Variable
+from tllib.self_training.mcc import ImageClassifier
 from torchvision.models import resnet50, ResNet50_Weights, resnet18, ResNet18_Weights
+
+def get_model(model_name, pretrain=True):
+    if model_name in models_.__dict__:
+        # load models_ from tllib.vision.models_
+        backbone = models_.__dict__[model_name](pretrained=pretrain)
+    else:
+        # load models from pytorch-image-models
+        backbone = timm.create_model(model_name, pretrained=pretrain)
+        try:
+            backbone.out_features = backbone.get_classifier().in_features
+            backbone.reset_classifier(0, '')
+        except:
+            backbone.out_features = backbone.head.in_features
+            backbone.head = nn.Identity()
+    return backbone
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_features=64, out_features=64):
@@ -26,7 +43,6 @@ class ResidualBlock(nn.Module):
 
     def forward(self, x):
         return x + self.block(x)
-
 
 class simpleGenerator(nn.Module):
     def __init__(self, opt=None):
@@ -50,7 +66,6 @@ class simpleGenerator(nn.Module):
         img_ = self.l2(out)
 
         return img_
-
 
 class simpleDiscriminator(nn.Module):
     def __init__(self, opt=None):
@@ -76,6 +91,15 @@ class simpleDiscriminator(nn.Module):
 
         return validity
 
+class tlibClassifier(nn.Module):
+    def __init__(self, opt=None) -> None:
+        super(tlibClassifier, self).__init__()
+        backbone = get_model(opt["arch"], pretrain=opt["pretrain"])
+        self.model = ImageClassifier(backbone, opt["n_classes"], finetune=opt["pretrain"])
+
+    def forward(self, x):
+        out = self.model(x)
+        return out
 
 class simpleClassifier(nn.Module):
     def __init__(self, opt=None):
