@@ -22,7 +22,7 @@ experiment:
   models:
     - simpleDiscriminator
     - simpleGenerator
-    - resnet50classifier 
+    - resnet18classifier 
   routines:
     - train_pixel_da:
         discriminator: simpleDiscriminator
@@ -40,7 +40,7 @@ experiment:
     b2: 0.999
     n_cpu: 8
     n_residual_blocks: 10
-    latent_dim: 40
+    latent_dim: 100
     img_size: 224
     channels: 3
     n_classes: 12
