@@ -30,7 +30,7 @@ def validate(val_loader, model, args):
     confmat = ConfusionMatrix(len(args["class_names"]), normalize='true').to(device)
     accuracy = Accuracy(len(args["class_names"])).to(device)
 
-    max_iters = int(args["n_classes"]*300/args["batch_size"])
+    max_iters = int(args["n_classes"]*500/args["batch_size"])
 
     with torch.no_grad():
         for i, data in tqdm(enumerate(val_loader)):
