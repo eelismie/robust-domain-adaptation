@@ -4,7 +4,9 @@ base_path = "/home/mielonen/robust-domain-adaptation"
 
 experiment_list = [
     "experiment_registry/mcc-visda2017.yaml",
-    "experiment_registry/mdd-visda2017.yaml"
+    "experiment_registry/mdd-visda2017.yaml", 
+    "experiment_registry/mcc-pacs.yaml", 
+    "experiment_registry/mdd-pacs.yaml"
 ]
 
 def modify(yaml, key, value):

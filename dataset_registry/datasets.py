@@ -461,6 +461,6 @@ class Office_31_D:
         test.dataset.transform = test_transform
 
         train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
+        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=True)
 
         return train_loader, test_loader
