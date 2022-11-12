@@ -4,6 +4,7 @@ import itertools
 import plotly.express as px 
 
 from torch.autograd import Variable
+from torchattacks import PGD
 from torch.optim import SGD
 from torch.optim.lr_scheduler import LambdaLR
 from tllib.utils.data import ForeverDataIterator
@@ -47,6 +48,41 @@ def validate(val_loader, model, args):
     model.train()
     acc = accuracy.compute()
     confusion = confmat.compute()
+    return acc.cpu().numpy(), confusion.cpu().numpy()
+
+def validate_adv(
+    val_loader = None, 
+    model = None,
+    args = None):
+
+    """
+    For the validation set : compute adversarial inputs and measure accuracy
+    """
+
+    confmat = ConfusionMatrix(len(args["class_names"]), normalize='true').to(device)
+    accuracy = Accuracy(len(args["class_names"])).to(device)
+
+    max_iters = int(args["n_classes"]*500/args["batch_size"])
+
+    atk = PGD(model, eps=8/255, alpha=2/225, steps=10, random_start=True)
+    #assume standard normalization TODO: infer this from val loader
+    atk.set_normalization_used(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+
+    for i, data in tqdm(enumerate(val_loader)):
+        images, labels = data 
+        images = images.to(device)
+        labels = labels.to(device)
+        adv_images = atk(images, labels)
+        outputs = model(adv_images)                 
+        output = torch.argmax(outputs, 1) 
+        accuracy.update(output, labels)
+        confmat.update(output, labels)
+        if (i >= max_iters):
+            break
+
+    acc = accuracy.compute()
+    confusion = confmat.compute()
+
     return acc.cpu().numpy(), confusion.cpu().numpy()
 
 def train_mcc(
@@ -230,3 +266,20 @@ def train_mdd(
         }, os.path.join(opt["checkpoint_path"], "mdd.pt"))
 
 
+def check_adv_accuracy(
+    classifier = None,
+    test_loader = None, 
+    opt = None
+    ):
+
+    classifier.to(device)
+    #TODO: infer the normalization used from dataset
+    atk.set_normalization_used(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    atk = PGD(classifier, eps=8/255, alpha=2/225, steps=10, random_start=True)
+
+    for images, labels in test_loader:
+        images = images.to(device)
+        labels = labels.to(device)
+        adv_images = atk(images, labels)
+
+    return 
