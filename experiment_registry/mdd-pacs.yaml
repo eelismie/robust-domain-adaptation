@@ -29,7 +29,7 @@ experiment:
         source_val: visdas-v
         target_val: visdar-v
   global_params:
-    num_epochs: 8
+    num_epochs: 30
     iters_per_epoch: 500
     batch_size: 36
     lr: 0.005
@@ -42,7 +42,7 @@ experiment:
     n_cpu: 8
     n_classes: None
     class_names: []
-    pretrain: true 
+    pretrain: false 
     arch: resnet50
     checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
     

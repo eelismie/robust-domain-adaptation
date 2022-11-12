@@ -11,3 +11,4 @@ opencv-python
 numba
 timm
 wandb
+torchattacks
