@@ -22,19 +22,20 @@ experiment:
   models:
     - tlibClassifiermdd
   routines:
-    - train_mcc:
-        classifier: tlibClassifier
+    - train_mdd:
+        classifier: tlibClassifiermdd
         source_train: visdas-t
         target_train: visdar-t
         source_val: visdas-v
         target_val: visdar-v
   global_params:
-    num_epochs: 1
+    num_epochs: 8
     iters_per_epoch: 500
-    batch_size: 32
+    batch_size: 36
     lr: 0.005
     lr_gamma: 0.001
     lr_decay: 0.75
+    momentum: 0.9
     weight_decay: 0.001
     trade_off: 1.0
     margin: 4.0
@@ -43,4 +44,5 @@ experiment:
     class_names: []
     pretrain: true 
     arch: resnet50
+    checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
     
