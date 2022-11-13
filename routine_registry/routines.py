@@ -1,9 +1,7 @@
 import numpy as np
 import os
-import itertools
 import plotly.express as px 
 
-from torch.autograd import Variable
 from torchattacks import PGD
 from torch.optim import SGD
 from torch.optim.lr_scheduler import LambdaLR
@@ -12,6 +10,8 @@ from tllib.alignment.mdd import ClassificationMarginDisparityDiscrepancy as Marg
 from tllib.self_training.mcc import MinimumClassConfusionLoss
 from torchmetrics import ConfusionMatrix, Accuracy
 from tqdm import tqdm
+from nwd import NuclearWassersteinDiscrepancy
+from datetime import datetime
 
 import torch.nn.functional as F
 import torch
@@ -20,6 +20,11 @@ import wandb
 
 cuda = True if torch.cuda.is_available() else False
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+def set_global_seed(args):
+    torch.backends.cudnn.deterministic = True
+    np.random.seed(args["seed"])
+    torch.manual_seed(0)
 
 def plotly_confusion_matrix(confusion_matrix, class_names):
     fig = px.imshow(np.around(confusion_matrix,3), x=class_names, y=class_names, text_auto=True)
@@ -62,7 +67,7 @@ def validate_adv(
     confmat = ConfusionMatrix(len(args["class_names"]), normalize='true').to(device)
     accuracy = Accuracy(len(args["class_names"])).to(device)
 
-    max_iters = int(args["n_classes"]*500/args["batch_size"])
+    max_iters = args["iters_per_epoch"]
 
     atk = PGD(model, eps=8/255, alpha=2/225, steps=10, random_start=True)
     #assume standard normalization TODO: infer this from val loader
@@ -101,6 +106,8 @@ def train_mcc(
     @author: Junguang Jiang
     @contact: JiangJunguang1123@outlook.com
     """
+
+    set_global_seed(opt)
 
     wandb.init(project="robust-domain-adaptation", config=opt)
 
@@ -165,11 +172,15 @@ def train_mcc(
     wandb.log({"source confusion": wandb.Plotly(f_a)})
     wandb.log({"target confusion": wandb.Plotly(f_b)})
 
+    now = datetime.now()
+    current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
+    model_path = current_time + "_mcc.pt"
+
     torch.save({
         'epoch': opt["num_epochs"],
         'model_state_dict': classifier.state_dict(),
         'optimizer_state_dict': optimizer.state_dict()
-        }, os.path.join(opt["checkpoint_path"], "mdd.pt"))
+        }, os.path.join(opt["checkpoint_path"], model_path))
 
 
 def train_mdd(
@@ -188,6 +199,8 @@ def train_mdd(
     @author: Junguang Jiang
     @contact: JiangJunguang1123@outlook.com
     """
+
+    set_global_seed(opt)
 
     wandb.init(project="robust-domain-adaptation", config=opt)
 
@@ -259,27 +272,101 @@ def train_mdd(
     wandb.log({"source confusion": wandb.Plotly(f_a)})
     wandb.log({"target confusion": wandb.Plotly(f_b)})
 
+    now = datetime.now()
+    current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
+    model_path = current_time + "_mdd.pt"
+
     torch.save({
         'epoch': opt["num_epochs"],
         'model_state_dict': classifier.state_dict(),
         'optimizer_state_dict': optimizer.state_dict()
-        }, os.path.join(opt["checkpoint_path"], "mdd.pt"))
+        }, os.path.join(opt["checkpoint_path"], model_path))
 
 
-def check_adv_accuracy(
+def train_daln(
     classifier = None,
-    test_loader = None, 
+    source_train = None,
+    target_train = None,
+    source_val = None,
+    target_val = None,
     opt = None
     ):
 
-    classifier.to(device)
-    #TODO: infer the normalization used from dataset
-    atk.set_normalization_used(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-    atk = PGD(classifier, eps=8/255, alpha=2/225, steps=10, random_start=True)
+    set_global_seed(opt)
 
-    for images, labels in test_loader:
-        images = images.to(device)
-        labels = labels.to(device)
-        adv_images = atk(images, labels)
+    wandb.init(project="robust-domain-adaptation", config=opt)
 
-    return 
+    classifier.train()
+
+    train_source_iter = ForeverDataIterator(source_train)
+    train_target_iter = ForeverDataIterator(target_train)
+
+    classifier = classifier.to(device)
+
+    # define optimizer and lr scheduler
+    discrepancy = NuclearWassersteinDiscrepancy(classifier.model.head).to(device)
+    optimizer = SGD(classifier.model.get_parameters(), opt["lr"], momentum=opt["momentum"], weight_decay=opt["weight_decay"], nesterov=True)
+    lr_scheduler = LambdaLR(optimizer, lambda x: opt["lr"] * (1. + opt["lr_gamma"] * float(x)) ** (-opt["lr_decay"]))
+
+    for e in range(opt["num_epochs"]):
+        for i in range(opt["iters_per_epoch"]):
+
+            optimizer.zero_grad()
+
+            x_s, labels_s = next(train_source_iter)[:2]
+            x_t, = next(train_target_iter)[:1]
+
+            x_s = x_s.to(device)
+            x_t = x_t.to(device)
+            labels_s = labels_s.to(device)
+
+            # compute output
+            x = torch.cat((x_s, x_t), dim=0)
+            y, f = classifier(x)
+            y, f = classifier(x)
+            y_s, y_t = y.chunk(2, dim=0)
+
+            cls_loss = F.cross_entropy(y_s, labels_s)
+            discrepancy_loss = -discrepancy(f)
+            transfer_loss = discrepancy_loss * opt["trade_off"]
+            loss = cls_loss + transfer_loss
+
+            # compute gradient and do SGD step
+            loss.backward() 
+            optimizer.step()
+            lr_scheduler.step()
+
+        if (e % 2 == 0):
+
+            global_acc_a, confusion_a = validate(source_val, classifier, opt)
+            global_acc_b, confusion_b = validate(target_val, classifier, opt)
+
+            per_class_a = np.diag(confusion_a).tolist()
+            per_class_b = np.diag(confusion_b).tolist()
+
+            logged_metrics = [ ("validation accuracy (target)", global_acc_b), ("validation accuracy (source)", global_acc_a) ]
+            logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(opt["class_names"], per_class_b) ]
+            logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(opt["class_names"], per_class_a) ]
+
+            log_ = { pair[0] : pair[1] for pair in logged_metrics }
+
+            wandb.log(log_)
+
+    global_acc_a, confusion_a = validate(source_val, classifier, opt)
+    global_acc_b, confusion_b = validate(target_val, classifier, opt)
+
+    f_a = plotly_confusion_matrix(confusion_a, opt["class_names"])
+    f_b = plotly_confusion_matrix(confusion_b, opt["class_names"])
+
+    wandb.log({"source confusion": wandb.Plotly(f_a)})
+    wandb.log({"target confusion": wandb.Plotly(f_b)})
+
+    now = datetime.now()
+    current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
+    model_path = current_time + "_mdd.pt"
+
+    torch.save({
+        'epoch': opt["num_epochs"],
+        'model_state_dict': classifier.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict()
+        }, os.path.join(opt["checkpoint_path"], model_path))
