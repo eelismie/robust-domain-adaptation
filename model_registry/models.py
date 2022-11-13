@@ -30,68 +30,6 @@ def get_model(model_name, pretrain=True):
             backbone.head = nn.Identity()
     return backbone
 
-class ResidualBlock(nn.Module):
-    def __init__(self, in_features=64, out_features=64):
-        super(ResidualBlock, self).__init__()
-
-        self.block = nn.Sequential(
-            nn.Conv2d(in_features, in_features, 3, 1, 1),
-            nn.BatchNorm2d(in_features),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_features, in_features, 3, 1, 1),
-            nn.BatchNorm2d(in_features),
-        )
-
-    def forward(self, x):
-        return x + self.block(x)
-
-class simpleGenerator(nn.Module):
-    def __init__(self, opt=None):
-        super(simpleGenerator, self).__init__()
-
-        # Fully-connected layer which constructs image channel shaped output from noise
-        self.fc = nn.Linear(opt["latent_dim"], opt["channels"] * opt["img_size"] ** 2)
-        self.l1 = nn.Sequential(nn.Conv2d(opt["channels"] * 2, 64, 3, 1, 1), nn.ReLU(inplace=True))
-
-        resblocks = []
-        for _ in range(opt["n_residual_blocks"]):
-            resblocks.append(ResidualBlock())
-        self.resblocks = nn.Sequential(*resblocks)
-
-        self.l2 = nn.Sequential(nn.Conv2d(64, opt["channels"], 3, 1, 1), nn.Tanh())
-
-    def forward(self, img, z):
-        gen_input = torch.cat((img, self.fc(z).view(*img.shape)), 1)
-        out = self.l1(gen_input)
-        out = self.resblocks(out)
-        img_ = self.l2(out)
-
-        return img_
-
-class simpleDiscriminator(nn.Module):
-    def __init__(self, opt=None):
-        super(simpleDiscriminator, self).__init__()
-
-        def block(in_features, out_features, normalization=True):
-            """Discriminator block"""
-            layers = [nn.Conv2d(in_features, out_features, 3, stride=2, padding=1), nn.LeakyReLU(0.2, inplace=True)]
-            if normalization:
-                layers.append(nn.InstanceNorm2d(out_features))
-            return layers
-
-        self.model = nn.Sequential(
-            *block(opt["channels"], 64, normalization=False),
-            *block(64, 128),
-            *block(128, 256),
-            *block(256, 512),
-            nn.Conv2d(512, 1, 3, 1, 1)
-        )
-
-    def forward(self, img):
-        validity = self.model(img)
-
-        return validity
-
 class tlibClassifier(nn.Module):
     def __init__(self, opt=None) -> None:
         super(tlibClassifier, self).__init__()

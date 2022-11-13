@@ -1,7 +1,7 @@
 experiment:
   source_dataset:
     class_name: PACS_P
-    path: /home/mielonen/robust-domain-adaptation/dataset_registry/data/pacs 
+    path: /home/mielonen/robust-domain-adaptation/dataset_registry/data/pacs
     train:
       name: visdas-t
       transform_args:
@@ -20,30 +20,29 @@ experiment:
       name: visdar-v
       transform_args: {}
   models:
-    - tlibClassifiermdd
+    - tlibClassifier
   routines:
-    - train_mdd:
-        classifier: tlibClassifiermdd
+    - train_daln:
+        classifier: tlibClassifier
         source_train: visdas-t
         target_train: visdar-t
         source_val: visdas-v
         target_val: visdar-v
   global_params:
     num_epochs: 20
+    seed: 42
     iters_per_epoch: 500
     batch_size: 36
-    seed: 42
     lr: 0.005
     lr_gamma: 0.001
     lr_decay: 0.75
     momentum: 0.9
     weight_decay: 0.001
-    trade_off: 1.0
-    margin: 4.0
+    trade_off: 0.01
     n_cpu: 8
     n_classes: None
     class_names: []
-    pretrain: true
+    pretrain: true 
     arch: resnet50
     checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
     

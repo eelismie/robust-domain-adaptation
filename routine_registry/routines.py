@@ -10,7 +10,7 @@ from tllib.alignment.mdd import ClassificationMarginDisparityDiscrepancy as Marg
 from tllib.self_training.mcc import MinimumClassConfusionLoss
 from torchmetrics import ConfusionMatrix, Accuracy
 from tqdm import tqdm
-from nwd import NuclearWassersteinDiscrepancy
+from .nwd import NuclearWassersteinDiscrepancy
 from datetime import datetime
 
 import torch.nn.functional as F
@@ -36,7 +36,6 @@ def validate(val_loader, model, args):
     confmat = ConfusionMatrix(len(args["class_names"]), normalize='true').to(device)
     accuracy = Accuracy(len(args["class_names"])).to(device)
 
-    max_iters = int(args["n_classes"]*500/args["batch_size"])
 
     with torch.no_grad():
         for i, data in tqdm(enumerate(val_loader)):
@@ -47,8 +46,6 @@ def validate(val_loader, model, args):
             output = torch.argmax(outputs, 1) 
             accuracy.update(output, labels)
             confmat.update(output, labels)
-            if (i >= max_iters):
-                break
 
     model.train()
     acc = accuracy.compute()
@@ -67,8 +64,6 @@ def validate_adv(
     confmat = ConfusionMatrix(len(args["class_names"]), normalize='true').to(device)
     accuracy = Accuracy(len(args["class_names"])).to(device)
 
-    max_iters = args["iters_per_epoch"]
-
     atk = PGD(model, eps=8/255, alpha=2/225, steps=10, random_start=True)
     #assume standard normalization TODO: infer this from val loader
     atk.set_normalization_used(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
@@ -82,8 +77,6 @@ def validate_adv(
         output = torch.argmax(outputs, 1) 
         accuracy.update(output, labels)
         confmat.update(output, labels)
-        if (i >= max_iters):
-            break
 
     acc = accuracy.compute()
     confusion = confmat.compute()

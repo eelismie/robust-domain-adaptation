@@ -29,9 +29,10 @@ experiment:
         source_val: visdas-v
         target_val: visdar-v
   global_params:
-    num_epochs: 30
+    num_epochs: 20
     iters_per_epoch: 500
     batch_size: 36
+    seed: 42
     lr: 0.005
     lr_gamma: 0.001
     lr_decay: 0.75
@@ -41,7 +42,7 @@ experiment:
     n_cpu: 8
     n_classes: None
     class_names: []
-    pretrain: false 
+    pretrain: true 
     temperature: 2.5
     arch: resnet50
     checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
