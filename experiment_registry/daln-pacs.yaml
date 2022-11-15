@@ -44,5 +44,6 @@ experiment:
     class_names: []
     pretrain: true 
     arch: resnet50
+    adv_validation_iters: 100
     checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
     

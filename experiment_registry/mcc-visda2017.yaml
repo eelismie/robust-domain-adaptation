@@ -45,5 +45,6 @@ experiment:
     pretrain: true 
     temperature: 2.5
     arch: resnet50
+    adv_validation_iters: 100
     checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
     

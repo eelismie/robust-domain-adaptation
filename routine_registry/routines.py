@@ -76,11 +76,11 @@ def validate_adv(
         images = images.to(device)
         labels = labels.to(device)
         adv_images = atk(images, labels)
-        pred, f = model(adv_images)
+        pred = model(adv_images)
         output = torch.argmax(pred, 1) 
         accuracy.update(output, labels)
         confmat.update(output, labels)
-        if (i >= args["iters_per_epoch"]):
+        if (i >= args["adv_validation_iters"]):
             break
 
     acc = accuracy.compute()
