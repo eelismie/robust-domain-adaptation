@@ -36,7 +36,6 @@ def validate(val_loader, model, args):
     confmat = ConfusionMatrix(len(args["class_names"]), normalize='true').to(device)
     accuracy = Accuracy(len(args["class_names"])).to(device)
 
-
     with torch.no_grad():
         for i, data in tqdm(enumerate(val_loader)):
             images, labels = data 
@@ -46,6 +45,8 @@ def validate(val_loader, model, args):
             output = torch.argmax(outputs, 1) 
             accuracy.update(output, labels)
             confmat.update(output, labels)
+            if (i >= args["iters_per_epoch"]):
+                break
 
     model.train()
     acc = accuracy.compute()
@@ -61,6 +62,8 @@ def validate_adv(
     For the validation set : compute adversarial inputs and measure accuracy
     """
 
+    model.eval()
+
     confmat = ConfusionMatrix(len(args["class_names"]), normalize='true').to(device)
     accuracy = Accuracy(len(args["class_names"])).to(device)
 
@@ -68,15 +71,17 @@ def validate_adv(
     #assume standard normalization TODO: infer this from val loader
     atk.set_normalization_used(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
-    for i, data in tqdm(enumerate(val_loader)):
+    for i, data in  enumerate(val_loader):
         images, labels = data 
         images = images.to(device)
         labels = labels.to(device)
         adv_images = atk(images, labels)
-        outputs = model(adv_images)                 
-        output = torch.argmax(outputs, 1) 
+        pred, f = model(adv_images)
+        output = torch.argmax(pred, 1) 
         accuracy.update(output, labels)
         confmat.update(output, labels)
+        if (i >= args["iters_per_epoch"]):
+            break
 
     acc = accuracy.compute()
     confusion = confmat.compute()
@@ -175,6 +180,16 @@ def train_mcc(
         'optimizer_state_dict': optimizer.state_dict()
         }, os.path.join(opt["checkpoint_path"], model_path))
 
+    #evalate adversarial attack 
+    global_acc_adv, confusion_adv = validate_adv(target_val, classifier, opt)
+    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
+    wandb.log({"target confusion (adv) ": wandb.Plotly(f_adv)})
+    wandb.log({"validation accuracy (target adv)" : global_acc_adv})
+
+    global_acc_adv, confusion_adv = validate_adv(source_val, classifier, opt)
+    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
+    wandb.log({"source confusion (adv) ": wandb.Plotly(f_adv)})
+    wandb.log({"validation accuracy (source adv)" : global_acc_adv})
 
 def train_mdd(
     classifier = None,
@@ -233,7 +248,6 @@ def train_mdd(
             # for adversarial classifier, minimize negative mdd is equal to maximize mdd
             transfer_loss = -mdd(y_s, y_s_adv, y_t, y_t_adv)
             loss = cls_loss + transfer_loss * opt["trade_off"]
-            classifier.model.step()
 
             # compute gradient and do SGD step
             loss.backward() 
@@ -275,6 +289,18 @@ def train_mdd(
         'optimizer_state_dict': optimizer.state_dict()
         }, os.path.join(opt["checkpoint_path"], model_path))
 
+        #evalate adversarial attack 
+
+    global_acc_adv, confusion_adv = validate_adv(target_val, classifier, opt)
+    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
+    wandb.log({"target confusion (adv) ": wandb.Plotly(f_adv)})
+    wandb.log({"validation accuracy (target adv)" : global_acc_adv})
+
+    global_acc_adv, confusion_adv = validate_adv(source_val, classifier, opt)
+    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
+    wandb.log({"source confusion (adv) ": wandb.Plotly(f_adv)})
+    wandb.log({"validation accuracy (source adv)" : global_acc_adv})
+
 
 def train_daln(
     classifier = None,
@@ -315,7 +341,6 @@ def train_daln(
 
             # compute output
             x = torch.cat((x_s, x_t), dim=0)
-            y, f = classifier(x)
             y, f = classifier(x)
             y_s, y_t = y.chunk(2, dim=0)
 
@@ -363,3 +388,15 @@ def train_daln(
         'model_state_dict': classifier.state_dict(),
         'optimizer_state_dict': optimizer.state_dict()
         }, os.path.join(opt["checkpoint_path"], model_path))
+
+    #evalate adversarial attack 
+
+    global_acc_adv, confusion_adv = validate_adv(target_val, classifier, opt)
+    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
+    wandb.log({"target confusion (adv) ": wandb.Plotly(f_adv)})
+    wandb.log({"validation accuracy (target adv)" : global_acc_adv})
+
+    global_acc_adv, confusion_adv = validate_adv(source_val, classifier, opt)
+    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
+    wandb.log({"source confusion (adv) ": wandb.Plotly(f_adv)})
+    wandb.log({"validation accuracy (source adv)" : global_acc_adv})
