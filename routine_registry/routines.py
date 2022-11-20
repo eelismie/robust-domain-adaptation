@@ -19,12 +19,12 @@ import torch
 import wandb
 
 cuda = True if torch.cuda.is_available() else False
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
 
 def set_global_seed(args):
     torch.backends.cudnn.deterministic = True
     np.random.seed(args["seed"])
-    torch.manual_seed(0)
+    torch.manual_seed(args["seed"])
 
 def plotly_confusion_matrix(confusion_matrix, class_names):
     fig = px.imshow(np.around(confusion_matrix,3), x=class_names, y=class_names, text_auto=True)
@@ -67,7 +67,7 @@ def validate_adv(
     confmat = ConfusionMatrix(len(args["class_names"]), normalize='true').to(device)
     accuracy = Accuracy(len(args["class_names"])).to(device)
 
-    atk = PGD(model, eps=8/255, alpha=2/225, steps=10, random_start=True)
+    atk = PGD(model, eps=1/500, alpha=1/500, steps=6, random_start=True)
     #assume standard normalization TODO: infer this from val loader
     atk.set_normalization_used(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
@@ -88,6 +88,212 @@ def validate_adv(
 
     return acc.cpu().numpy(), confusion.cpu().numpy()
 
+class experiment:
+
+    def __init__(
+        self,
+        classifier = None,
+        source_train = None,
+        target_train = None,
+        source_val = None,
+        target_val = None,
+        opt = None
+        ):
+
+        self.classifier = classifier
+        self.source_train = source_train
+        self.target_train = target_train
+        self.source_val = source_val
+        if (target_val):
+            self.target_val = target_val
+        else:
+            self.target_val = target_train
+        self.opt = opt
+
+    def run(self):
+        self.setup()
+        for e in range(self.opt["num_epochs"]):
+            self.each_epoch(e)
+        self.cleanup()
+
+    def each_epoch(self, e):
+        # define actions before and after each epoch
+        for i in range(self.opt["iters_per_epoch"]):
+            self.each_iter(i) 
+
+    def setup(self):
+        set_global_seed(self.opt)
+        wandb.init(project="robust-domain-adaptation", config=self.opt)
+        self.classifier.train()
+        self.classifier = self.classifier.to(device)
+        self.optimizer = SGD(self.classifier.model.get_parameters(), self.opt["lr"], momentum=self.opt["momentum"], weight_decay=self.opt["weight_decay"],nesterov=True)
+        self.lr_scheduler = LambdaLR(self.optimizer, lambda x: self.opt["lr"] * (1. + self.opt["lr_gamma"] * float(x)) ** (-self.opt["lr_decay"]))
+
+    def cleanup(self):
+
+        global_acc_a, confusion_a = validate(self.source_val, self.classifier, self.opt)
+        global_acc_b, confusion_b = validate(self.target_val, self.classifier, self.opt)
+
+        f_a = plotly_confusion_matrix(confusion_a, self.opt["class_names"])
+        f_b = plotly_confusion_matrix(confusion_b, self.opt["class_names"])
+
+        wandb.log({"source confusion": wandb.Plotly(f_a)})
+        wandb.log({"target confusion": wandb.Plotly(f_b)})
+        wandb.log({"source validation accuracy": global_acc_a})
+        wandb.log({"target validation accuracy": global_acc_b})
+
+        now = datetime.now()
+        current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
+        model_path = current_time + "_mdd.pt"
+
+        return
+
+    def each_iter(self, i):
+        # define actions during each iteratos
+        return
+
+class mcc_experiment(experiment):
+
+    """
+    modified from mcc.py in ttlib / transfer learning library
+    
+    Original author: 
+    @author: Junguang Jiang
+    @contact: JiangJunguang1123@outlook.com
+    """
+
+    def setup(self):
+        super().setup()
+        self.train_source_iter = ForeverDataIterator(self.source_train)
+        self.train_target_iter = ForeverDataIterator(self.target_train)
+        self.mcc_loss = MinimumClassConfusionLoss(temperature=self.opt["temperature"])
+
+    def each_iter(self, i):
+        x_s, labels_s = next(self.train_source_iter)[:2]
+        x_t, = next(self.train_target_iter)[:1]
+
+        x_s = x_s.to(device)
+        x_t = x_t.to(device)
+        labels_s = labels_s.to(device)
+
+        # compute output
+        x = torch.cat((x_s, x_t), dim=0)
+        y, f = self.classifier(x)
+        y_s, y_t = y.chunk(2, dim=0)
+
+        cls_loss = F.cross_entropy(y_s, labels_s)
+        transfer_loss = self.mcc_loss(y_t)
+        loss = cls_loss + transfer_loss * self.opt["trade_off"]
+
+        # compute gradient and do SGD step
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        self.lr_scheduler.step()
+
+    def each_epoch(self, e):
+        super().each_epoch(e)
+
+        global_acc_a, confusion_a = validate(self.source_val, self.classifier, self.opt)
+        global_acc_b, confusion_b = validate(self.target_val, self.classifier, self.opt)
+
+        per_class_a = np.diag(confusion_a).tolist()
+        per_class_b = np.diag(confusion_b).tolist()
+
+        logged_metrics = [ ("validation accuracy (target)", global_acc_b), ("validation accuracy (source)", global_acc_a) ]
+        logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(self.opt["class_names"], per_class_b) ]
+        logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(self.opt["class_names"], per_class_a) ]
+
+        log_ = { pair[0] : pair[1] for pair in logged_metrics }
+
+        wandb.log(log_)
+
+    def cleanup(self):
+        super().cleanup()
+        return
+
+class mdd_experiment(experiment):
+
+    """
+    modified from mdd.py in ttlib / transfer learning library
+    
+    Original author: 
+    @author: Junguang Jiang
+    @contact: JiangJunguang1123@outlook.com
+    """
+
+    def setup(self):
+        super().setup()
+        self.train_source_iter = ForeverDataIterator(self.source_train)
+        self.train_target_iter = ForeverDataIterator(self.target_train)
+        self.mdd = MarginDisparityDiscrepancy(self.opt["margin"]).to(device)
+
+    def each_iter(self, i):
+        self.optimizer.zero_grad()
+
+        x_s, labels_s = next(self.train_source_iter)[:2]
+        x_t, = next(self.train_target_iter)[:1]
+
+        x_s = x_s.to(device)
+        x_t = x_t.to(device)
+        labels_s = labels_s.to(device)
+
+        # compute output
+        x = torch.cat((x_s, x_t), dim=0)
+        outputs, outputs_adv = self.classifier(x)
+        y_s, y_t = outputs.chunk(2, dim=0)
+        y_s_adv, y_t_adv = outputs_adv.chunk(2, dim=0)
+
+        # compute cross entropy loss on source domain
+        cls_loss = F.cross_entropy(y_s, labels_s)
+        # compute margin disparity discrepancy between domains
+        # for adversarial classifier, minimize negative mdd is equal to maximize mdd
+        transfer_loss = -self.mdd(y_s, y_s_adv, y_t, y_t_adv)
+        loss = cls_loss + transfer_loss * self.opt["trade_off"]
+
+        # compute gradient and do SGD step
+        loss.backward() 
+        self.optimizer.step()
+        self.lr_scheduler.step()
+
+    def cleanup(self):
+        super().cleanup()
+        return
+
+class daln_experiment(experiment):
+
+    def setup(self):
+        super().setup()
+        self.train_source_iter = ForeverDataIterator(self.source_train)
+        self.train_target_iter = ForeverDataIterator(self.target_train)
+        self.discrepancy = NuclearWassersteinDiscrepancy(self.classifier.model.head).to(device)
+
+    def each_iter(self, i):
+        self.optimizer.zero_grad()
+
+        x_s, labels_s = next(self.train_source_iter)[:2]
+        x_t, = next(self.train_target_iter)[:1]
+
+        x_s = x_s.to(device)
+        x_t = x_t.to(device)
+        labels_s = labels_s.to(device)
+
+        # compute output
+        x = torch.cat((x_s, x_t), dim=0)
+        y, f = self.classifier(x)
+        y_s, y_t = y.chunk(2, dim=0)
+
+        cls_loss = F.cross_entropy(y_s, labels_s)
+        discrepancy_loss = -self.discrepancy(f)
+        transfer_loss = discrepancy_loss * self.opt["trade_off"]
+        loss = cls_loss + transfer_loss
+
+        # compute gradient and do SGD step
+        loss.backward() 
+        self.optimizer.step()
+        self.lr_scheduler.step()
+
+
 def train_mcc(
     classifier = None,
     source_train = None,
@@ -97,99 +303,18 @@ def train_mcc(
     opt = None
     ):
 
-    """
-    modified from mcc.py in ttlib / transfer learning library
+    experiment_ = mcc_experiment(
+        classifier=classifier, 
+        source_train=source_train, 
+        target_train=target_train,
+        source_val=source_val,
+        target_val=None
+        opt=opt) 
 
-    Original author: 
-    @author: Junguang Jiang
-    @contact: JiangJunguang1123@outlook.com
-    """
+    experiment_.run()
+    return
 
-    set_global_seed(opt)
 
-    wandb.init(project="robust-domain-adaptation", config=opt)
-
-    classifier.train()
-
-    train_source_iter = ForeverDataIterator(source_train)
-    train_target_iter = ForeverDataIterator(target_train)
-
-    classifier = classifier.to(device)
-
-    # define optimizer and lr scheduler
-    optimizer = SGD(classifier.model.get_parameters(), opt["lr"], momentum=opt["momentum"], weight_decay=opt["weight_decay"],nesterov=True)
-    lr_scheduler = LambdaLR(optimizer, lambda x: opt["lr"] * (1. + opt["lr_gamma"] * float(x)) ** (-opt["lr_decay"]))
-    mcc_loss = MinimumClassConfusionLoss(temperature=opt["temperature"])
-
-    for e in range(opt["num_epochs"]):
-        for i in range(opt["iters_per_epoch"]):
-            x_s, labels_s = next(train_source_iter)[:2]
-            x_t, = next(train_target_iter)[:1]
-
-            x_s = x_s.to(device)
-            x_t = x_t.to(device)
-            labels_s = labels_s.to(device)
-
-            # compute output
-            x = torch.cat((x_s, x_t), dim=0)
-            y, f = classifier(x)
-            y_s, y_t = y.chunk(2, dim=0)
-
-            cls_loss = F.cross_entropy(y_s, labels_s)
-            transfer_loss = mcc_loss(y_t)
-            loss = cls_loss + transfer_loss * opt["trade_off"]
-
-            # compute gradient and do SGD step
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            lr_scheduler.step()
-
-        if (e % 2 == 0):
-
-            global_acc_a, confusion_a = validate(source_val, classifier, opt)
-            global_acc_b, confusion_b = validate(target_val, classifier, opt)
-
-            per_class_a = np.diag(confusion_a).tolist()
-            per_class_b = np.diag(confusion_b).tolist()
-
-            logged_metrics = [ ("validation accuracy (target)", global_acc_b), ("validation accuracy (source)", global_acc_a) ]
-            logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(opt["class_names"], per_class_b) ]
-            logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(opt["class_names"], per_class_a) ]
-
-            log_ = { pair[0] : pair[1] for pair in logged_metrics }
-
-            wandb.log(log_)
-
-    global_acc_a, confusion_a = validate(source_val, classifier, opt)
-    global_acc_b, confusion_b = validate(target_val, classifier, opt)
-
-    f_a = plotly_confusion_matrix(confusion_a, opt["class_names"])
-    f_b = plotly_confusion_matrix(confusion_b, opt["class_names"])
-
-    wandb.log({"source confusion": wandb.Plotly(f_a)})
-    wandb.log({"target confusion": wandb.Plotly(f_b)})
-
-    now = datetime.now()
-    current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
-    model_path = current_time + "_mcc.pt"
-
-    torch.save({
-        'epoch': opt["num_epochs"],
-        'model_state_dict': classifier.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict()
-        }, os.path.join(opt["checkpoint_path"], model_path))
-
-    #evalate adversarial attack 
-    global_acc_adv, confusion_adv = validate_adv(target_val, classifier, opt)
-    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
-    wandb.log({"target confusion (adv) ": wandb.Plotly(f_adv)})
-    wandb.log({"validation accuracy (target adv)" : global_acc_adv})
-
-    global_acc_adv, confusion_adv = validate_adv(source_val, classifier, opt)
-    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
-    wandb.log({"source confusion (adv) ": wandb.Plotly(f_adv)})
-    wandb.log({"validation accuracy (source adv)" : global_acc_adv})
 
 def train_mdd(
     classifier = None,
@@ -200,107 +325,17 @@ def train_mdd(
     opt = None
     ):
 
-    """
-    modified from mdd.py in ttlib / transfer learning library
-    
-    Original author: 
-    @author: Junguang Jiang
-    @contact: JiangJunguang1123@outlook.com
-    """
+    experiment_ = mdd_experiment(
+        classifier=classifier,
+        source_train=source_train,
+        target_train=target_train,
+        source_val=source_val,
+        target_val=None,
+        opt=opt
+    )
 
-    set_global_seed(opt)
-
-    wandb.init(project="robust-domain-adaptation", config=opt)
-
-    classifier.train()
-
-    train_source_iter = ForeverDataIterator(source_train)
-    train_target_iter = ForeverDataIterator(target_train)
-
-    classifier = classifier.to(device)
-
-    # define optimizer and lr scheduler
-    mdd = MarginDisparityDiscrepancy(opt["margin"]).to(device)
-    optimizer = SGD(classifier.model.get_parameters(), opt["lr"], momentum=opt["momentum"], weight_decay=opt["weight_decay"], nesterov=True)
-    lr_scheduler = LambdaLR(optimizer, lambda x: opt["lr"] * (1. + opt["lr_gamma"] * float(x)) ** (-opt["lr_decay"]))
-
-    for e in range(opt["num_epochs"]):
-        for i in range(opt["iters_per_epoch"]):
-
-            optimizer.zero_grad()
-
-            x_s, labels_s = next(train_source_iter)[:2]
-            x_t, = next(train_target_iter)[:1]
-
-            x_s = x_s.to(device)
-            x_t = x_t.to(device)
-            labels_s = labels_s.to(device)
-
-            # compute output
-            x = torch.cat((x_s, x_t), dim=0)
-            outputs, outputs_adv = classifier(x)
-            y_s, y_t = outputs.chunk(2, dim=0)
-            y_s_adv, y_t_adv = outputs_adv.chunk(2, dim=0)
-
-            # compute cross entropy loss on source domain
-            cls_loss = F.cross_entropy(y_s, labels_s)
-            # compute margin disparity discrepancy between domains
-            # for adversarial classifier, minimize negative mdd is equal to maximize mdd
-            transfer_loss = -mdd(y_s, y_s_adv, y_t, y_t_adv)
-            loss = cls_loss + transfer_loss * opt["trade_off"]
-
-            # compute gradient and do SGD step
-            loss.backward() 
-            optimizer.step()
-            lr_scheduler.step()
-
-        if (e % 2 == 0):
-
-            global_acc_a, confusion_a = validate(source_val, classifier, opt)
-            global_acc_b, confusion_b = validate(target_val, classifier, opt)
-
-            per_class_a = np.diag(confusion_a).tolist()
-            per_class_b = np.diag(confusion_b).tolist()
-
-            logged_metrics = [ ("validation accuracy (target)", global_acc_b), ("validation accuracy (source)", global_acc_a) ]
-            logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(opt["class_names"], per_class_b) ]
-            logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(opt["class_names"], per_class_a) ]
-
-            log_ = { pair[0] : pair[1] for pair in logged_metrics }
-
-            wandb.log(log_)
-
-    global_acc_a, confusion_a = validate(source_val, classifier, opt)
-    global_acc_b, confusion_b = validate(target_val, classifier, opt)
-
-    f_a = plotly_confusion_matrix(confusion_a, opt["class_names"])
-    f_b = plotly_confusion_matrix(confusion_b, opt["class_names"])
-
-    wandb.log({"source confusion": wandb.Plotly(f_a)})
-    wandb.log({"target confusion": wandb.Plotly(f_b)})
-
-    now = datetime.now()
-    current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
-    model_path = current_time + "_mdd.pt"
-
-    torch.save({
-        'epoch': opt["num_epochs"],
-        'model_state_dict': classifier.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict()
-        }, os.path.join(opt["checkpoint_path"], model_path))
-
-        #evalate adversarial attack 
-
-    global_acc_adv, confusion_adv = validate_adv(target_val, classifier, opt)
-    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
-    wandb.log({"target confusion (adv) ": wandb.Plotly(f_adv)})
-    wandb.log({"validation accuracy (target adv)" : global_acc_adv})
-
-    global_acc_adv, confusion_adv = validate_adv(source_val, classifier, opt)
-    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
-    wandb.log({"source confusion (adv) ": wandb.Plotly(f_adv)})
-    wandb.log({"validation accuracy (source adv)" : global_acc_adv})
-
+    experiment_.run()
+    return
 
 def train_daln(
     classifier = None,
@@ -311,92 +346,14 @@ def train_daln(
     opt = None
     ):
 
-    set_global_seed(opt)
+    experiment_ = daln_experiment(
+        classifier=classifier,
+        source_train=source_train,
+        target_train=target_train,
+        source_val=source_val,
+        target_val=None,
+        opt=opt
+    )
 
-    wandb.init(project="robust-domain-adaptation", config=opt)
-
-    classifier.train()
-
-    train_source_iter = ForeverDataIterator(source_train)
-    train_target_iter = ForeverDataIterator(target_train)
-
-    classifier = classifier.to(device)
-
-    # define optimizer and lr scheduler
-    discrepancy = NuclearWassersteinDiscrepancy(classifier.model.head).to(device)
-    optimizer = SGD(classifier.model.get_parameters(), opt["lr"], momentum=opt["momentum"], weight_decay=opt["weight_decay"], nesterov=True)
-    lr_scheduler = LambdaLR(optimizer, lambda x: opt["lr"] * (1. + opt["lr_gamma"] * float(x)) ** (-opt["lr_decay"]))
-
-    for e in range(opt["num_epochs"]):
-        for i in range(opt["iters_per_epoch"]):
-
-            optimizer.zero_grad()
-
-            x_s, labels_s = next(train_source_iter)[:2]
-            x_t, = next(train_target_iter)[:1]
-
-            x_s = x_s.to(device)
-            x_t = x_t.to(device)
-            labels_s = labels_s.to(device)
-
-            # compute output
-            x = torch.cat((x_s, x_t), dim=0)
-            y, f = classifier(x)
-            y_s, y_t = y.chunk(2, dim=0)
-
-            cls_loss = F.cross_entropy(y_s, labels_s)
-            discrepancy_loss = -discrepancy(f)
-            transfer_loss = discrepancy_loss * opt["trade_off"]
-            loss = cls_loss + transfer_loss
-
-            # compute gradient and do SGD step
-            loss.backward() 
-            optimizer.step()
-            lr_scheduler.step()
-
-        if (e % 2 == 0):
-
-            global_acc_a, confusion_a = validate(source_val, classifier, opt)
-            global_acc_b, confusion_b = validate(target_val, classifier, opt)
-
-            per_class_a = np.diag(confusion_a).tolist()
-            per_class_b = np.diag(confusion_b).tolist()
-
-            logged_metrics = [ ("validation accuracy (target)", global_acc_b), ("validation accuracy (source)", global_acc_a) ]
-            logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(opt["class_names"], per_class_b) ]
-            logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(opt["class_names"], per_class_a) ]
-
-            log_ = { pair[0] : pair[1] for pair in logged_metrics }
-
-            wandb.log(log_)
-
-    global_acc_a, confusion_a = validate(source_val, classifier, opt)
-    global_acc_b, confusion_b = validate(target_val, classifier, opt)
-
-    f_a = plotly_confusion_matrix(confusion_a, opt["class_names"])
-    f_b = plotly_confusion_matrix(confusion_b, opt["class_names"])
-
-    wandb.log({"source confusion": wandb.Plotly(f_a)})
-    wandb.log({"target confusion": wandb.Plotly(f_b)})
-
-    now = datetime.now()
-    current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
-    model_path = current_time + "_mdd.pt"
-
-    torch.save({
-        'epoch': opt["num_epochs"],
-        'model_state_dict': classifier.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict()
-        }, os.path.join(opt["checkpoint_path"], model_path))
-
-    #evalate adversarial attack 
-
-    global_acc_adv, confusion_adv = validate_adv(target_val, classifier, opt)
-    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
-    wandb.log({"target confusion (adv) ": wandb.Plotly(f_adv)})
-    wandb.log({"validation accuracy (target adv)" : global_acc_adv})
-
-    global_acc_adv, confusion_adv = validate_adv(source_val, classifier, opt)
-    f_adv = plotly_confusion_matrix(confusion_adv, opt["class_names"])
-    wandb.log({"source confusion (adv) ": wandb.Plotly(f_adv)})
-    wandb.log({"validation accuracy (source adv)" : global_acc_adv})
+    experiment_.run()
+    return  
