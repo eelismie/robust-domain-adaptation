@@ -200,35 +200,11 @@ class ClassSampler(Sampler[int]):
     def __len__(self):
         return len(self.dataset)
 
-class VISDA17_real:
+class domainDataset:
 
-    """
-    dataset utility class that automatically downloads the VISDA 2017 real images into "path"
-    and returns train / test dataloaders 
-    """
-
-    def __init__(self,path,opt = {}): 
-        self.path = path
-        self.opt = opt 
-
-        self.n_classes = 12
-        self.class_names = [
-            'aeroplane', 
-            'bicycle', 
-            'bus', 
-            'car', 
-            'horse', 
-            'knife',
-            'motorcycle', 
-            'person', 
-            'plant', 
-            'skateboard', 
-            'train', 
-            'truck'
-        ]
-
-    #create new classes on top of VisDA2017 etc. that store the indices of each class 
-
+    def __init__(self, path, opt = {}) -> None:
+        raise(NotImplementedError)
+        
     def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
 
         opt = self.opt
@@ -249,230 +225,54 @@ class VISDA17_real:
 
         return train_loader, test_loader
 
-class VISDA17_synthetic:
-
-    """
-    dataset utility class that automatically downloads the VISDA 2017 simulated images into "path"
-    and returns train / test dataloaders 
-    """
+class VISDA17_real(domainDataset):
 
     def __init__(self,path,opt = {}): 
         self.path = path
         self.opt = opt 
+        self.dataset = VisDA2017(self.path, 'Real', download=True)
+        self.class_names = self.dataset.classes
+        self.n_classes = len(self.class_names)
 
-        self.n_classes = 12
-        self.class_names = [
-            'aeroplane', 
-            'bicycle', 
-            'bus', 
-            'car', 
-            'horse', 
-            'knife',
-            'motorcycle', 
-            'person', 
-            'plant', 
-            'skateboard', 
-            'train', 
-            'truck'
-        ]
-        
-    def get_loaders(self, train_transform_args = {}, val_transform_args = {} ):
+    #create new classes on top of VisDA2017 etc. that store the indices of each class 
 
-        opt = self.opt
-
-        train_transform = get_train_transform(**train_transform_args)
-        test_transform = get_val_transform(**val_transform_args)
-        dataset = VisDA2017(self.path, 'Synthetic', download=True)
-
-        train_size = int(0.8 * len(dataset))
-        test_size = len(dataset) - train_size
-        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
-
-        train.dataset.transform = train_transform
-        test.dataset.transform = test_transform
-
-        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
-
-        return train_loader, test_loader
-
-class PACS_P:
-
-    """
-    Photos from PACS dataset
-    """
+class VISDA17_synthetic(domainDataset):
 
     def __init__(self,path,opt = {}): 
         self.path = path
         self.opt = opt 
-        self.class_names = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person']
-        self.n_classes = 7
+        self.dataset = VisDA2017(self.path, 'Synthetic', download=True)
+        self.class_names = self.dataset.classes
+        self.n_classes = len(self.class_names)
 
-    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
-        opt = self.opt
 
-        dataset = PACS(self.path, task="P", split="all", download=True)
-
-        train_transform = get_train_transform(**train_transform_args)
-        test_transform = get_val_transform(**val_transform_args)
-
-        train_size = int(0.8 * len(dataset))
-        test_size = len(dataset) - train_size
-        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
-
-        train.dataset.transform = train_transform
-        test.dataset.transform = test_transform
-
-        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
-
-        return train_loader, test_loader
-
-class PACS_A:
-
-    """
-    Artistics renditions from PACS dataset
-    """
+class PACS_P(domainDataset):
 
     def __init__(self,path,opt = {}): 
         self.path = path
         self.opt = opt 
-        self.class_names = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person']
-        self.n_classes = 7
-
-    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
-        opt = self.opt
-
-        dataset = PACS(self.path, "A", split="all", download=True)
-
-        train_transform = get_train_transform(**train_transform_args)
-        test_transform = get_val_transform(**val_transform_args)
-
-        train_size = int(0.8 * len(dataset))
-        test_size = len(dataset) - train_size
-        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
-
-        train.dataset.transform = train_transform
-        test.dataset.transform = test_transform
-
-        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
-
-        return train_loader, test_loader
+        self.dataset = PACS(self.path, task="P", split="all", download=True)
+        self.class_names = self.dataset.classes
+        self.n_classes = len(self.class_names)
 
 
-class PACS_C:
-
-    """
-    Cartoon renditions from PACS dataset
-    """
+class PACS_A(domainDataset):
 
     def __init__(self,path,opt = {}): 
         self.path = path
         self.opt = opt 
-        self.class_names = ['dog', 'elephant', 'giraffe', 'guitar', 'horse', 'house', 'person']
-        self.n_classes = 7
+        self.dataset = PACS(self.path, task="A", split="all", download=True)
+        self.class_names = self.dataset.classes
+        self.n_classes = len(self.class_names)
+    #create new classes on top of VisDA2017 etc. that store the indices of each class 
 
-    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
-        opt = self.opt
-
-        dataset = PACS(self.path, task="C", split="all", download=True)
-
-        train_transform = get_train_transform(**train_transform_args)
-        test_transform = get_val_transform(**val_transform_args)
-
-        train_size = int(0.8 * len(dataset))
-        test_size = len(dataset) - train_size
-        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
-
-        train.dataset.transform = train_transform
-        test.dataset.transform = test_transform
-
-        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
-
-        return train_loader, test_loader
-
-
-class Office_31_A:
-
-    def __init__(self,path, opt = {}): 
-        self.path = path
-        self.opt = opt 
-
-    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
-        opt = self.opt
-        dataset = Office31(self.path, "A", download=True)
-        self.n_classes = dataset.num_classes
-        self.class_names = dataset.classes 
-
-        train_transform = get_train_transform(**train_transform_args)
-        test_transform = get_val_transform(**val_transform_args)
-
-        train_size = int(0.8 * len(dataset))
-        test_size = len(dataset) - train_size
-        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
-
-        train.dataset.transform = train_transform
-        test.dataset.transform = test_transform
-
-        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
-
-        return train_loader, test_loader
-
-class Office_31_W:
+class PACS_C(domainDataset):
 
     def __init__(self,path,opt = {}): 
         self.path = path
         self.opt = opt 
+        self.dataset = PACS(self.path, task="C", split="all", download=True)
+        self.class_names = self.dataset.classes
+        self.n_classes = len(self.class_names)
 
-    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
 
-        opt = self.opt
-        dataset = Office31(self.path, "W", download=True)
-        self.n_classes = dataset.num_classes
-        self.class_names = dataset.classes 
-
-        train_transform = get_train_transform(**train_transform_args)
-        test_transform = get_val_transform(**val_transform_args)
-
-        train_size = int(0.8 * len(dataset))
-        test_size = len(dataset) - train_size
-        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
-
-        train.dataset.transform = train_transform
-        test.dataset.transform = test_transform
-
-        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
-
-        return train_loader, test_loader
-
-class Office_31_D:
-
-    def __init__(self,path,opt = {}): 
-        self.path = path
-        self.opt = opt 
-
-    def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
-
-        opt = self.opt
-        dataset = Office31(self.path, "D", download=True)
-        self.n_classes = dataset.num_classes
-        self.class_names = dataset.classes 
-
-        train_transform = get_train_transform(**train_transform_args)
-        test_transform = get_val_transform(**val_transform_args)
-
-        train_size = int(0.8 * len(dataset))
-        test_size = len(dataset) - train_size
-        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
-
-        train.dataset.transform = train_transform
-        test.dataset.transform = test_transform
-
-        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=True)
-
-        return train_loader, test_loader
