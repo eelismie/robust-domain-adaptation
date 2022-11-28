@@ -1,0 +1,68 @@
+experiment:
+  source_dataset:
+    class_name: MNIST
+    path: /home/mielonen/robust-domain-adaptation/dataset_registry/data/mnist
+    train:
+      name: visdas-t
+      transform_args:
+        resizing: default
+        resize_size : 32
+        random_horizontal_flip: false
+        norm_mean: [0.5, 0.5 ,0.5]
+        norm_std: [0.5, 0.5, 0.5]
+    validate:
+      name: visdas-v
+      transform_args:
+        resizing: default
+        resize_size : 32
+        norm_mean: [0.5, 0.5 ,0.5]
+        norm_std: [0.5, 0.5, 0.5]
+  target_dataset:
+    class_name: USPS
+    path: /home/mielonen/robust-domain-adaptation/dataset_registry/data/usps
+    train: 
+      name: visdar-t
+      transform_args:
+        resizing: default
+        resize_size : 32
+        random_horizontal_flip: false
+        norm_mean: [0.5, 0.5 ,0.5]
+        norm_std: [0.5, 0.5, 0.5]
+    validate:
+      name: visdar-v
+      transform_args:
+        resizing: default
+        resize_size : 32
+        norm_mean: [0.5, 0.5 ,0.5]
+        norm_std: [0.5, 0.5, 0.5]
+  models:
+    - tlibClassifiermdd
+  routines:
+    - train_mdd:
+        classifier: tlibClassifiermdd
+        source_train: visdas-t
+        target_train: visdar-t
+        source_val: visdas-v
+        target_val: visdar-t
+  global_params:
+    num_epochs: 12
+    seed: 42
+    iters_per_epoch: 500
+    batch_size: 36
+    lr: 0.01
+    lr_gamma: 0.001
+    lr_decay: 0.75
+    momentum: 0.9
+    margin: 4.0
+    weight_decay: 0.001
+    trade_off: 0.01
+    n_cpu: 8
+    n_classes: None
+    class_names: []
+    pretrain: false 
+    arch: resnet18
+    adv_validation_iters: 100
+    cfol_sampling: False
+    bottleneck_dim: 256
+    checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
+    

@@ -2,18 +2,32 @@ import torch
 import torchvision.transforms as T
 import torch.utils.data
 import numpy as np
+import copy
 import torch.nn.functional as F
 
+from PIL import Image
+from typing import Tuple
 from typing import Optional
 from torchvision import datasets
 from torch.utils.data import DataLoader
 from tllib.vision.transforms import ResizeImage
 from tllib.vision.datasets.visda2017 import VisDA2017
-from tllib.vision.datasets.digits import SVHN, USPS
-from tllib.vision.datasets.office31 import Office31
 from tllib.vision.datasets.pacs import PACS
+from tllib.vision.datasets.domainnet import DomainNet
+from tllib.vision.datasets.digits import MNIST as mnist
+from tllib.vision.datasets.digits import USPS as usps 
 from timm.data.auto_augment import auto_augment_transform, rand_augment_transform
 from torch.utils.data.sampler import Sampler
+from torch.utils.data import RandomSampler, SequentialSampler 
+from tllib.vision.datasets import ImageList
+from sklearn.model_selection import train_test_split
+
+
+
+"""
+This package contains utility classes for loading VISDA, PACS, DomainNet and MNIST 
+datasets for domain adaptation experiments. 
+"""
 
 def get_train_transform(resizing='default', scale=(0.08, 1.0), ratio=(3. / 4., 4. / 3.), random_horizontal_flip=True,
                         random_color_jitter=False, resize_size=224, norm_mean=(0.485, 0.456, 0.406),
@@ -24,6 +38,7 @@ def get_train_transform(resizing='default', scale=(0.08, 1.0), ratio=(3. / 4., 4
         - cen.crop: resize the image to 256 and take the center crop of size 224;
         - res: resize the image to 224;
     """
+
     transformed_img_size = 224
     if resizing == 'default':
         transform = T.Compose([
@@ -71,11 +86,13 @@ def get_train_transform(resizing='default', scale=(0.08, 1.0), ratio=(3. / 4., 4
 
 def get_val_transform(resizing='default', resize_size=224,
                       norm_mean=(0.485, 0.456, 0.406), norm_std=(0.229, 0.224, 0.225), no_change=False):
+
     """
     resizing mode:
         - default: resize the image to 256 and take the center crop of size 224;
         - res.: resize the image to 224
     """
+
     if resizing == 'default':
         transform = T.Compose([
             ResizeImage(256),
@@ -93,19 +110,49 @@ def get_val_transform(resizing='default', resize_size=224,
         T.Normalize(mean=norm_mean, std=norm_std)
     ])
 
-class visdaAdapter(VisDA2017):
-    def __init__(self, root: str, task: str, split='all', download: Optional[bool] = True, **kwargs):
-        super().__init__(root, task, split=split, download = download, **kwargs)
-        self.targets = np.array(self.targets) #convert targets to numpy array
-        self.class_indices = [(self.targets == class_id).nonzero()[0] for class_id in range(self.num_classes)]
-        self.sampler = ClassSampler(self, gamma=0.5)
+#ImageList to adapted dataset with new fields
 
-class pacsAdapter(PACS):
-    def __init__(self, root: str, task: str, split='all', download: Optional[bool] = True, **kwargs):
+class domainAdapter(DomainNet):
+    def __init__(self, root: str, task: str, split='train', download: Optional[bool] = True, **kwargs):
         super().__init__(root, task, split=split, download = download, **kwargs)
         self.targets = np.array(self.targets) #convert targets to numpy array
         self.class_indices = [(self.targets == class_id).nonzero()[0] for class_id in range(self.num_classes)]
-        self.sampler = ClassSampler(self, gamma=0.5)
+
+class mnistAdapter(mnist):
+    def __init__(self, root: str, split="train", download: Optional[bool] = True, **kwargs):
+        super().__init__(root, mode="RGB", split=split, download = download, **kwargs)
+        self.targets = np.array(self.targets) #convert targets to numpy array
+        self.class_indices = [(self.targets == class_id).nonzero()[0] for class_id in range(self.num_classes)]
+
+class uspsAdapter(usps):
+    def __init__(self, root: str, split="train", download: Optional[bool] = True, **kwargs):
+        super().__init__(root, mode="RGB", download = download, split=split)
+        self.targets = np.array(self.targets) #convert targets to numpy array
+        self.class_indices = [(self.targets == class_id).nonzero()[0] for class_id in range(self.num_classes)]
+        
+def stratifiedSplit(dataset: ImageList, test_size=0.25, random_state=42) -> Tuple[ImageList, ImageList]:
+        
+        """
+        Create stratified train / test split for ttlib ImageList objects
+        """
+        
+        samples = dataset.samples #list tuple(path to image, name)
+        samples_train, samples_test = train_test_split(
+                samples,
+                test_size=test_size,
+                random_state=random_state,
+                stratify=np.array([t[1] for t in samples])
+                )
+
+        train_set = copy.deepcopy(dataset)
+        test_set = copy.deepcopy(dataset)
+
+        train_set.samples = samples_train
+        train_set.targets = [s[1] for s in train_set.samples]
+        test_set.samples = samples_test
+        test_set.targets = [s[1] for s in test_set.samples]
+
+        return train_set, test_set
 
 class ClassSampler(Sampler[int]):
 
@@ -203,6 +250,10 @@ class ClassSampler(Sampler[int]):
 class domainDataset:
 
     def __init__(self, path, opt = {}) -> None:
+        self.opt = None
+        self.path = None
+        self.train_dataset = None
+        self.test_dataset = None
         raise(NotImplementedError)
         
     def get_loaders(self, train_transform_args = {}, val_transform_args = {}):
@@ -211,68 +262,110 @@ class domainDataset:
 
         train_transform = get_train_transform(**train_transform_args)
         test_transform = get_val_transform(**val_transform_args)
-        dataset = VisDA2017(self.path, 'Real', download=True)
 
-        train_size = int(0.8 * len(dataset))
-        test_size = len(dataset) - train_size
-        train, test = torch.utils.data.random_split(dataset, [train_size, test_size])
+        self.train_dataset.transform = train_transform
+        self.test_dataset.transform = test_transform
 
-        train.dataset.transform = train_transform
-        test.dataset.transform = test_transform
+        train_loader = None
+        if (opt["cfol_sampling"]):
+            sampler = ClassSampler(self.train_dataset)
+            train_loader = DataLoader(self.train_dataset, batch_size=opt["batch_size"], drop_last=True, sampler=sampler)
+        else:
+            train_loader = DataLoader(self.train_dataset, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
 
-        train_loader = DataLoader(train, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-        test_loader = DataLoader(test, batch_size=opt["batch_size"], shuffle=False)
+        test_loader = DataLoader(self.test_dataset, batch_size=opt["batch_size"], drop_last=True)
 
         return train_loader, test_loader
 
 class VISDA17_real(domainDataset):
 
+    """
+    Real objects in VISDA
+    """
+
     def __init__(self,path,opt = {}): 
         self.path = path
         self.opt = opt 
         self.dataset = VisDA2017(self.path, 'Real', download=True)
+
+        train, test = stratifiedSplit(self.dataset)
+        train.targets = np.array(train.targets) #convert targets to numpy array
+        train.class_indices = [(train.targets == class_id).nonzero()[0] for class_id in range(self.dataset.num_classes)]
+        test.targets = np.array(test.targets) #convert targets to numpy array
+        test.class_indices = [(test.targets == class_id).nonzero()[0] for class_id in range(self.dataset.num_classes)]
+
+        self.train_dataset = train
+        self.test_dataset = test
         self.class_names = self.dataset.classes
         self.n_classes = len(self.class_names)
 
-    #create new classes on top of VisDA2017 etc. that store the indices of each class 
-
 class VISDA17_synthetic(domainDataset):
+
+    """
+    Real objects in VISDA
+    """
 
     def __init__(self,path,opt = {}): 
         self.path = path
         self.opt = opt 
         self.dataset = VisDA2017(self.path, 'Synthetic', download=True)
+
+        train, test = stratifiedSplit(self.dataset)
+        train.targets = np.array(train.targets) #convert targets to numpy array
+        train.class_indices = [(train.targets == class_id).nonzero()[0] for class_id in range(self.dataset.num_classes)]
+        test.targets = np.array(test.targets) #convert targets to numpy array
+        test.class_indices = [(test.targets == class_id).nonzero()[0] for class_id in range(self.dataset.num_classes)]
+
+        self.train_dataset = train
+        self.test_dataset = test
         self.class_names = self.dataset.classes
         self.n_classes = len(self.class_names)
 
+class DNET_R(domainDataset):
 
-class PACS_P(domainDataset):
+    """
+    Domainnet real photos
+    """
 
-    def __init__(self,path,opt = {}): 
+    def __init__(self, path, opt={}) -> None:
         self.path = path
         self.opt = opt 
-        self.dataset = PACS(self.path, task="P", split="all", download=True)
-        self.class_names = self.dataset.classes
+        self.train_dataset = domainAdapter(self.path, "r", split="train", download=True)
+        self.test_dataset = domainAdapter(self.path, "r", split="test", download=True)
+        self.class_names = self.train_dataset.classes
         self.n_classes = len(self.class_names)
 
+class DNET_S(domainDataset):
 
-class PACS_A(domainDataset):
+    """
+    Domainnet sketches
+    """
 
-    def __init__(self,path,opt = {}): 
+    def __init__(self, path, opt={}) -> None:
         self.path = path
         self.opt = opt 
-        self.dataset = PACS(self.path, task="A", split="all", download=True)
-        self.class_names = self.dataset.classes
+        self.train_dataset = domainAdapter(self.path, "s", split="train", download=True)
+        self.test_dataset = domainAdapter(self.path, "s", split="test", download=True)
+        self.class_names = self.train_dataset.classes
         self.n_classes = len(self.class_names)
-    #create new classes on top of VisDA2017 etc. that store the indices of each class 
 
-class PACS_C(domainDataset):
 
-    def __init__(self,path,opt = {}): 
+class MNIST(domainDataset): 
+
+    def __init__(self, path, opt={}) -> None:
         self.path = path
         self.opt = opt 
-        self.dataset = PACS(self.path, task="C", split="all", download=True)
-        self.class_names = self.dataset.classes
+        self.train_dataset = mnistAdapter(self.path, split="train", download=True)
+        self.test_dataset = mnistAdapter(self.path, split="test", download=True)
+        self.class_names = self.train_dataset.classes
         self.n_classes = len(self.class_names)
 
+class USPS(domainDataset): 
 
+    def __init__(self, path, opt={}) -> None:
+        self.path = path
+        self.opt = opt 
+        self.train_dataset = uspsAdapter(self.path, split="train", download=True)
+        self.test_dataset = uspsAdapter(self.path, split="test", download=True)
+        self.class_names = self.train_dataset.classes
+        self.n_classes = len(self.class_names)

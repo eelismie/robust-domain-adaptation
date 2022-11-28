@@ -142,10 +142,6 @@ class experiment:
         wandb.log({"source validation accuracy": global_acc_a})
         wandb.log({"target validation accuracy": global_acc_b})
 
-        now = datetime.now()
-        current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
-        model_path = current_time + "_mdd.pt"
-
         return
 
     def each_iter(self, i):
@@ -185,6 +181,9 @@ class mcc_experiment(experiment):
         transfer_loss = self.mcc_loss(y_t)
         loss = cls_loss + transfer_loss * self.opt["trade_off"]
 
+        if (i % 10 == 0):
+            print(loss)
+
         # compute gradient and do SGD step
         self.optimizer.zero_grad()
         loss.backward()
@@ -210,8 +209,14 @@ class mcc_experiment(experiment):
 
     def cleanup(self):
         super().cleanup()
+        now = datetime.now()
+        current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
+        dataset = type(self.source_train.dataset).__name__
+        model_path = current_time + dataset + "_mcc.pt"
+        savedir = os.path.join(self.opt["checkpoint_path"], model_path)
+        torch.save(self.classifier.state_dict(), savedir)
         return
-
+    
 class mdd_experiment(experiment):
 
     """
@@ -251,6 +256,9 @@ class mdd_experiment(experiment):
         transfer_loss = -self.mdd(y_s, y_s_adv, y_t, y_t_adv)
         loss = cls_loss + transfer_loss * self.opt["trade_off"]
 
+        if (i % 10 == 0):
+            print(loss)
+
         # compute gradient and do SGD step
         loss.backward() 
         self.optimizer.step()
@@ -258,8 +266,14 @@ class mdd_experiment(experiment):
 
     def cleanup(self):
         super().cleanup()
+        now = datetime.now()
+        current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
+        dataset = type(self.source_train.dataset).__name__
+        model_path = current_time + dataset + "_mdd.pt"
+        savedir = os.path.join(self.opt["checkpoint_path"], model_path)
+        torch.save(self.classifier.state_dict(), savedir)
         return
-
+    
 class daln_experiment(experiment):
 
     def setup(self):
@@ -288,10 +302,24 @@ class daln_experiment(experiment):
         transfer_loss = discrepancy_loss * self.opt["trade_off"]
         loss = cls_loss + transfer_loss
 
+        if (i % 10 == 0):
+            print("loss @" + str(i) + " : " + str(loss.item()))
+
         # compute gradient and do SGD step
         loss.backward() 
         self.optimizer.step()
         self.lr_scheduler.step()
+
+    def cleanup(self):
+        super().cleanup()
+        now = datetime.now()
+        current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
+        #get the dataset class string, append to the path
+        dataset = type(self.source_train.dataset).__name__
+        model_path = current_time + dataset + "_daln.pt"
+        savedir = os.path.join(self.opt["checkpoint_path"], model_path)
+        torch.save(self.classifier.state_dict(), savedir)
+        return
 
 
 def train_mcc(
@@ -308,13 +336,11 @@ def train_mcc(
         source_train=source_train, 
         target_train=target_train,
         source_val=source_val,
-        target_val=None
+        target_val=None,
         opt=opt) 
 
     experiment_.run()
     return
-
-
 
 def train_mdd(
     classifier = None,

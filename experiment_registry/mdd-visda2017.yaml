@@ -27,7 +27,7 @@ experiment:
         source_train: visdas-t
         target_train: visdar-t
         source_val: visdas-v
-        target_val: visdar-v
+        target_val: visdar-t
   global_params:
     num_epochs: 12
     iters_per_epoch: 500
@@ -46,5 +46,7 @@ experiment:
     pretrain: true
     arch: resnet50
     adv_validation_iters: 100
+    cfol_sampling: False
+    bottleneck_dim: 1024
     checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
     
