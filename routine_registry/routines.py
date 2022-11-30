@@ -100,7 +100,7 @@ class experiment:
         opt = None
         ):
 
-        self.classifier = classifier
+        self.classifier = classifier.model #TODO: instead of classifier.model, pass model directly
         self.source_train = source_train
         self.target_train = target_train
         self.source_val = source_val
@@ -117,16 +117,31 @@ class experiment:
         self.cleanup()
 
     def each_epoch(self, e):
+
         # define actions before and after each epoch
         for i in range(self.opt["iters_per_epoch"]):
             self.each_iter(i) 
+
+        global_acc_a, confusion_a = validate(self.source_val, self.classifier, self.opt)
+        global_acc_b, confusion_b = validate(self.target_val, self.classifier, self.opt)
+
+        per_class_a = np.diag(confusion_a).tolist()
+        per_class_b = np.diag(confusion_b).tolist()
+
+        logged_metrics = [ ("validation accuracy (target)", global_acc_b), ("validation accuracy (source)", global_acc_a) ]
+        logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(self.opt["class_names"], per_class_b) ]
+        logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(self.opt["class_names"], per_class_a) ]
+
+        log_ = { pair[0] : pair[1] for pair in logged_metrics }
+
+        wandb.log(log_)
 
     def setup(self):
         set_global_seed(self.opt)
         wandb.init(project="robust-domain-adaptation", config=self.opt)
         self.classifier.train()
         self.classifier = self.classifier.to(device)
-        self.optimizer = SGD(self.classifier.model.get_parameters(), self.opt["lr"], momentum=self.opt["momentum"], weight_decay=self.opt["weight_decay"],nesterov=True)
+        self.optimizer = SGD(self.classifier.get_parameters(), self.opt["lr"], momentum=self.opt["momentum"], weight_decay=self.opt["weight_decay"],nesterov=True)
         self.lr_scheduler = LambdaLR(self.optimizer, lambda x: self.opt["lr"] * (1. + self.opt["lr_gamma"] * float(x)) ** (-self.opt["lr_decay"]))
 
     def cleanup(self):
@@ -165,6 +180,7 @@ class mcc_experiment(experiment):
         self.mcc_loss = MinimumClassConfusionLoss(temperature=self.opt["temperature"])
 
     def each_iter(self, i):
+        self.optimizer.zero_grad()
         x_s, labels_s = next(self.train_source_iter)[:2]
         x_t, = next(self.train_target_iter)[:1]
 
@@ -182,30 +198,12 @@ class mcc_experiment(experiment):
         loss = cls_loss + transfer_loss * self.opt["trade_off"]
 
         if (i % 10 == 0):
-            print(loss)
+            print(cls_loss.item(), transfer_loss.item(), loss.item())
 
         # compute gradient and do SGD step
-        self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         self.lr_scheduler.step()
-
-    def each_epoch(self, e):
-        super().each_epoch(e)
-
-        global_acc_a, confusion_a = validate(self.source_val, self.classifier, self.opt)
-        global_acc_b, confusion_b = validate(self.target_val, self.classifier, self.opt)
-
-        per_class_a = np.diag(confusion_a).tolist()
-        per_class_b = np.diag(confusion_b).tolist()
-
-        logged_metrics = [ ("validation accuracy (target)", global_acc_b), ("validation accuracy (source)", global_acc_a) ]
-        logged_metrics += [ (pair[0] + "_target", pair[1]) for pair in zip(self.opt["class_names"], per_class_b) ]
-        logged_metrics += [ (pair[0] + "_source", pair[1]) for pair in zip(self.opt["class_names"], per_class_a) ]
-
-        log_ = { pair[0] : pair[1] for pair in logged_metrics }
-
-        wandb.log(log_)
 
     def cleanup(self):
         super().cleanup()
@@ -280,7 +278,7 @@ class daln_experiment(experiment):
         super().setup()
         self.train_source_iter = ForeverDataIterator(self.source_train)
         self.train_target_iter = ForeverDataIterator(self.target_train)
-        self.discrepancy = NuclearWassersteinDiscrepancy(self.classifier.model.head).to(device)
+        self.discrepancy = NuclearWassersteinDiscrepancy(self.classifier.head).to(device)
 
     def each_iter(self, i):
         self.optimizer.zero_grad()
@@ -322,6 +320,154 @@ class daln_experiment(experiment):
         return
 
 
+class mcc_experiment_cfol(mcc_experiment):
+
+    """
+    CFOL on source domain loss to minimize class discrepancy 
+    """
+
+    def __init__(self, classifier=None, source_train=None, target_train=None, source_val=None, target_val=None, opt=None):
+        super().__init__(classifier, source_train, target_train, source_val, target_val, opt)
+        self.sampler = source_train.sampler
+        assert(self.opt["cfol_sampling"])
+
+    def each_iter(self, i):
+        
+        self.optimizer.zero_grad()
+        x_s, labels_s = next(self.train_source_iter)[:2]
+        x_t, = next(self.train_target_iter)[:1]
+
+        x_s = x_s.to(device)
+        x_t = x_t.to(device)
+        labels_s = labels_s.to(device)
+
+        # compute output
+        x = torch.cat((x_s, x_t), dim=0)
+        y, f = self.classifier(x)
+        y_s, y_t = y.chunk(2, dim=0)
+
+        cls_loss = F.cross_entropy(y_s, labels_s, reduction="none")
+        transfer_loss = self.mcc_loss(y_t)
+
+        # Possibly weight losses
+        if self.sampler.reweight:
+            cls_loss = self.num_classes * self.sampler.batch_weight(labels_s).type_as(cls_loss) * cls_loss
+
+        loss = cls_loss.mean() + transfer_loss * self.opt["trade_off"]
+
+        class_sampler_lr = 0.0000001
+        predictions = torch.argmax(y_s, 1)
+        class_loss = predictions != labels_s
+        eta_times_loss_arms = class_sampler_lr * class_loss
+        self.sampler.batch_update(labels_s, eta_times_loss_arms)
+
+        if (i % 10 == 0):
+            print("loss @" + str(i) + " : " + str(loss.item()))
+
+        # compute gradient and do SGD step
+        loss.backward()
+        self.optimizer.step()
+        self.lr_scheduler.step()
+
+class mdd_experiment_cfol(mdd_experiment):
+
+    """
+    CFOL on source domain loss to minimize class discrepancy 
+    """
+
+    def __init__(self, classifier=None, source_train=None, target_train=None, source_val=None, target_val=None, opt=None):
+        super().__init__(classifier, source_train, target_train, source_val, target_val, opt)
+        self.sampler = source_train.sampler
+        assert(self.opt["cfol_sampling"])
+
+    def each_iter(self, i):
+        self.optimizer.zero_grad()
+
+        x_s, labels_s = next(self.train_source_iter)[:2]
+        x_t, = next(self.train_target_iter)[:1]
+
+        x_s = x_s.to(device)
+        x_t = x_t.to(device)
+        labels_s = labels_s.to(device)
+
+        # compute output
+        x = torch.cat((x_s, x_t), dim=0)
+        outputs, outputs_adv = self.classifier(x)
+        y_s, y_t = outputs.chunk(2, dim=0)
+        y_s_adv, y_t_adv = outputs_adv.chunk(2, dim=0)
+
+        # compute cross entropy loss on source domain
+        cls_loss = F.cross_entropy(y_s, labels_s, reduction="none")
+        transfer_loss = -self.mdd(y_s, y_s_adv, y_t, y_t_adv)
+
+        if self.sampler.reweight:
+            cls_loss = self.num_classes * self.sampler.batch_weight(labels_s).type_as(cls_loss) * cls_loss
+
+        loss = cls_loss.mean() + transfer_loss * self.opt["trade_off"]
+
+        class_sampler_lr = 0.0000001
+        predictions = torch.argmax(y_s, 1)
+        class_loss = predictions != labels_s
+        eta_times_loss_arms = class_sampler_lr * class_loss
+        self.sampler.batch_update(labels_s, eta_times_loss_arms)
+
+        if (i % 10 == 0):
+            print(loss)
+
+        # compute gradient and do SGD step
+        loss.backward() 
+        self.optimizer.step()
+        self.lr_scheduler.step()
+
+class daln_experiment_cfol(daln_experiment):
+
+    def __init__(self, classifier=None, source_train=None, target_train=None, source_val=None, target_val=None, opt=None):
+        super().__init__(classifier, source_train, target_train, source_val, target_val, opt)
+        self.sampler = source_train.sampler
+        assert(self.opt["cfol_sampling"])
+
+    def each_iter(self, i):
+        self.optimizer.zero_grad()
+
+        x_s, labels_s = next(self.train_source_iter)[:2]
+        x_t, = next(self.train_target_iter)[:1]
+
+        x_s = x_s.to(device)
+        x_t = x_t.to(device)
+        labels_s = labels_s.to(device)
+
+        # compute output
+        x = torch.cat((x_s, x_t), dim=0)
+        y, f = self.classifier(x)
+        y_s, y_t = y.chunk(2, dim=0)
+
+        ##
+
+        cls_loss = F.cross_entropy(y_s, labels_s, reduction="none")
+        transfer_loss = -self.discrepancy(f)
+
+        if self.sampler.reweight:
+            cls_loss = self.num_classes * self.sampler.batch_weight(labels_s).type_as(cls_loss) * cls_loss
+
+        loss = cls_loss.mean() + transfer_loss * self.opt["trade_off"]
+
+        class_sampler_lr = 0.0000001
+        predictions = torch.argmax(y_s, 1)
+        class_loss = predictions != labels_s
+        eta_times_loss_arms = class_sampler_lr * class_loss
+        self.sampler.batch_update(labels_s, eta_times_loss_arms)
+
+        if (i % 10 == 0):
+            print("loss @" + str(i) + " : " + str(loss.item()))
+
+        # compute gradient and do SGD step
+        loss.backward() 
+        self.optimizer.step()
+        self.lr_scheduler.step()
+
+
+
+
 def train_mcc(
     classifier = None,
     source_train = None,
@@ -331,13 +477,22 @@ def train_mcc(
     opt = None
     ):
 
-    experiment_ = mcc_experiment(
-        classifier=classifier, 
-        source_train=source_train, 
-        target_train=target_train,
-        source_val=source_val,
-        target_val=None,
-        opt=opt) 
+    if (opt["cfol_sampling"]):
+        experiment_ = mcc_experiment_cfol(
+            classifier=classifier, 
+            source_train=source_train, 
+            target_train=target_train,
+            source_val=source_val,
+            target_val=None,
+            opt=opt)
+    else:
+        experiment_ = mcc_experiment(
+            classifier=classifier, 
+            source_train=source_train, 
+            target_train=target_train,
+            source_val=source_val,
+            target_val=None,
+            opt=opt)
 
     experiment_.run()
     return
@@ -351,14 +506,22 @@ def train_mdd(
     opt = None
     ):
 
-    experiment_ = mdd_experiment(
-        classifier=classifier,
-        source_train=source_train,
-        target_train=target_train,
-        source_val=source_val,
-        target_val=None,
-        opt=opt
-    )
+    if (opt["cfol_sampling"]):
+        experiment_ = mdd_experiment_cfol(
+            classifier=classifier, 
+            source_train=source_train, 
+            target_train=target_train,
+            source_val=source_val,
+            target_val=None,
+            opt=opt)
+    else:
+        experiment_ = mdd_experiment(
+            classifier=classifier, 
+            source_train=source_train, 
+            target_train=target_train,
+            source_val=source_val,
+            target_val=None,
+            opt=opt)
 
     experiment_.run()
     return
@@ -372,14 +535,22 @@ def train_daln(
     opt = None
     ):
 
-    experiment_ = daln_experiment(
-        classifier=classifier,
-        source_train=source_train,
-        target_train=target_train,
-        source_val=source_val,
-        target_val=None,
-        opt=opt
-    )
+    if (opt["cfol_sampling"]):
+        experiment_ = daln_experiment_cfol(
+            classifier=classifier, 
+            source_train=source_train, 
+            target_train=target_train,
+            source_val=source_val,
+            target_val=None,
+            opt=opt)
+    else:
+        experiment_ = daln_experiment(
+            classifier=classifier, 
+            source_train=source_train, 
+            target_train=target_train,
+            source_val=source_val,
+            target_val=None,
+            opt=opt)
 
     experiment_.run()
     return  

@@ -268,7 +268,7 @@ class domainDataset:
 
         train_loader = None
         if (opt["cfol_sampling"]):
-            sampler = ClassSampler(self.train_dataset)
+            sampler = ClassSampler(self.train_dataset, gamma=0.5)
             train_loader = DataLoader(self.train_dataset, batch_size=opt["batch_size"], drop_last=True, sampler=sampler)
         else:
             train_loader = DataLoader(self.train_dataset, batch_size=opt["batch_size"], shuffle=True, drop_last=True)

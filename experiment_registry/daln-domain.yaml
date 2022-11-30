@@ -1,7 +1,7 @@
 experiment:
   source_dataset:
-    class_name: VISDA17_synthetic
-    path: /home/mielonen/robust-domain-adaptation/dataset_registry/data/visda2017
+    class_name: DNET_S
+    path: /home/mielonen/robust-domain-adaptation/dataset_registry/data/domainnet
     train:
       name: visdas-t
       transform_args:
@@ -10,8 +10,8 @@ experiment:
       name: visdas-v
       transform_args: {}
   target_dataset:
-    class_name: VISDA17_real
-    path: /home/mielonen/robust-domain-adaptation/dataset_registry/data/visda2017
+    class_name: DNET_R
+    path: /home/mielonen/robust-domain-adaptation/dataset_registry/data/domainnet
     train: 
       name: visdar-t
       transform_args:
@@ -20,10 +20,10 @@ experiment:
       name: visdar-v
       transform_args: {}
   models:
-    - tlibClassifiermdd
+    - tlibClassifier
   routines:
     - train_mdd:
-        classifier: tlibClassifiermdd
+        classifier: tlibClassifier
         source_train: visdas-t
         target_train: visdar-t
         source_val: visdas-v

@@ -5,7 +5,7 @@ experiment:
     train:
       name: visdas-t
       transform_args:
-        resizing: default
+        resizing: cen.crop
     validate:
       name: visdas-v
       transform_args: {}
@@ -15,36 +15,39 @@ experiment:
     train: 
       name: visdar-t
       transform_args:
-        resizing: default
+        resizing: cen.crop
     validate:
       name: visdar-v
       transform_args: {}
   models:
     - tlibClassifier
   routines:
-    - train_daln:
+    - train_mdd:
         classifier: tlibClassifier
         source_train: visdas-t
         target_train: visdar-t
         source_val: visdas-v
-        target_val: visdar-v
+        target_val: visdar-t
   global_params:
-    num_epochs: 12
-    seed: 42
+    num_epochs: 30
     iters_per_epoch: 500
     batch_size: 36
     lr: 0.005
+    seed: 42
     lr_gamma: 0.001
     lr_decay: 0.75
     momentum: 0.9
     weight_decay: 0.001
-    trade_off: 0.01
+    trade_off: 1.0
+    margin: 4.0
     n_cpu: 8
     n_classes: None
     class_names: []
-    pretrain: true 
-    arch: resnet50
+    pretrain: true
+    arch: resnet101
+    no_pool: false
     adv_validation_iters: 100
     cfol_sampling: False
+    bottleneck_dim: 1024
     checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
     

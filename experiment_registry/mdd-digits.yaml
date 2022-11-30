@@ -61,6 +61,7 @@ experiment:
     class_names: []
     pretrain: false 
     arch: resnet18
+    no_pool: true 
     adv_validation_iters: 100
     cfol_sampling: False
     bottleneck_dim: 256
