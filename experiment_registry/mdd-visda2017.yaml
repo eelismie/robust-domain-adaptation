@@ -32,12 +32,12 @@ experiment:
     num_epochs: 30
     iters_per_epoch: 500
     batch_size: 36
-    lr: 0.005
+    lr: 0.004
     seed: 42
-    lr_gamma: 0.001
+    lr_gamma: 0.0002
     lr_decay: 0.75
     momentum: 0.9
-    weight_decay: 0.001
+    weight_decay: 0.0005
     trade_off: 1.0
     margin: 4.0
     n_cpu: 8

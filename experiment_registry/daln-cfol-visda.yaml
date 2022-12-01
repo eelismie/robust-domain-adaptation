@@ -20,10 +20,10 @@ experiment:
       name: visdar-v
       transform_args: {}
   models:
-    - tlibClassifiermdd
+    - tlibClassifier
   routines:
     - train_mdd:
-        classifier: tlibClassifiermdd
+        classifier: tlibClassifier
         source_train: visdas-t
         target_train: visdar-t
         source_val: visdas-v
@@ -32,12 +32,12 @@ experiment:
     num_epochs: 30
     iters_per_epoch: 500
     batch_size: 36
-    lr: 0.004
+    lr: 0.005
     seed: 42
-    lr_gamma: 0.0002
+    lr_gamma: 0.001
     lr_decay: 0.75
     momentum: 0.9
-    weight_decay: 0.0005
+    weight_decay: 0.001
     trade_off: 1.0
     margin: 4.0
     n_cpu: 8
