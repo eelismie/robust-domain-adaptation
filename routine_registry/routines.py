@@ -230,6 +230,7 @@ class mdd_experiment(experiment):
         self.train_source_iter = ForeverDataIterator(self.source_train)
         self.train_target_iter = ForeverDataIterator(self.target_train)
         self.mdd = MarginDisparityDiscrepancy(self.opt["margin"]).to(device)
+        self.mdd.train()
 
     def each_iter(self, i):
         self.optimizer.zero_grad()
@@ -253,6 +254,7 @@ class mdd_experiment(experiment):
         # for adversarial classifier, minimize negative mdd is equal to maximize mdd
         transfer_loss = -self.mdd(y_s, y_s_adv, y_t, y_t_adv)
         loss = cls_loss + transfer_loss * self.opt["trade_off"]
+        self.classifier.step()
 
         if (i % 10 == 0):
             print(loss)
@@ -404,6 +406,7 @@ class mdd_experiment_cfol(mdd_experiment):
             cls_loss = self.num_classes * self.sampler.batch_weight(labels_s).type_as(cls_loss) * cls_loss
 
         loss = cls_loss.mean() + transfer_loss * self.opt["trade_off"]
+        self.classifier.step()
 
         class_sampler_lr = 0.0000001
         predictions = torch.argmax(y_s, 1)
