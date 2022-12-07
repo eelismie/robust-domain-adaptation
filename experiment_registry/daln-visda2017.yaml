@@ -33,6 +33,7 @@ experiment:
     iters_per_epoch: 500
     batch_size: 36
     lr: 0.005
+    test_size: 0.25
     seed: 42
     lr_gamma: 0.001
     lr_decay: 0.75
