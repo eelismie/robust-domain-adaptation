@@ -107,6 +107,9 @@ class experiment:
         if (target_val):
             self.target_val = target_val
         else:
+            #Note: 
+            # Evaluation protocol in UDA involves testing classification accuracy on images used during training 
+            # the classification labels are not used in the target domain during training, but are used during testing.
             self.target_val = target_train
         self.opt = opt
 

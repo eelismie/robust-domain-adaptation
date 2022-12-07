@@ -146,8 +146,8 @@ class ClassSampler(Sampler[int]):
         dataset (Dataset): dataset to sample from
 
     Modified from: 
-    Author : Thomas Pethick 
-    Contact : thomas.pethick@epfl.ch 
+    @author : Thomas Pethick 
+    @contact : thomas.pethick@epfl.ch 
     """
 
     def __init__(self, 
