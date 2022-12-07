@@ -1,14 +1,18 @@
 import numpy as np
 import os
 import plotly.express as px 
+import copy
 
 from torchattacks import PGD
+from torch.utils.data import DataLoader
+from dataset_registry.datasets import ClassSampler
 from torch.optim import SGD
 from torch.optim.lr_scheduler import LambdaLR
 from tllib.utils.data import ForeverDataIterator
 from tllib.alignment.mdd import ClassificationMarginDisparityDiscrepancy as MarginDisparityDiscrepancy
 from tllib.self_training.mcc import MinimumClassConfusionLoss
 from torchmetrics import ConfusionMatrix, Accuracy
+from torch.utils.data.sampler import RandomSampler, SequentialSampler
 from tqdm import tqdm
 from .nwd import NuclearWassersteinDiscrepancy
 from datetime import datetime
@@ -104,13 +108,24 @@ class experiment:
         self.source_train = source_train
         self.target_train = target_train
         self.source_val = source_val
-        if (target_val):
-            self.target_val = target_val
-        else:
-            #Note: 
-            # Evaluation protocol in UDA involves testing classification accuracy on images used during training 
-            # the classification labels are not used in the target domain during training, but are used during testing.
-            self.target_val = target_train
+
+        #                ___A note on UDA validation / test split___
+        # - the target train dataset labels are used for validation (assuming no target labels are used in training the model) 
+        # - the target test split is used for testing (data seen by model in production)
+
+        if (opt["cfol_sampling"]):
+            #note: currently all training sets get cfol samplers when cfol is switched on. Even though the 
+            #sampler for the target dataset isn't updated we switch it back to a default random sampler. 
+            self.target_train = DataLoader(self.target_train.dataset, batch_size=opt["batch_size"], drop_last=True, shuffle=True)
+            assert(isinstance(self.source_train.sampler, ClassSampler))
+            
+        self.target_val = DataLoader(self.target_train.dataset, batch_size=opt["batch_size"], shuffle=False)
+        self.target_test = target_val 
+
+        assert(isinstance(self.target_train.sampler, RandomSampler))
+        assert(isinstance(self.target_val.sampler, SequentialSampler))
+        assert(isinstance(self.target_test.sampler, SequentialSampler)) 
+
         self.opt = opt
 
     def run(self):
@@ -141,7 +156,7 @@ class experiment:
 
     def setup(self):
         set_global_seed(self.opt)
-        wandb.init(project="robust-domain-adaptation", config=self.opt)
+        #wandb.init(project="robust-domain-adaptation", config=self.opt)
         self.classifier.train()
         self.classifier = self.classifier.to(device)
         self.optimizer = SGD(self.classifier.get_parameters(), self.opt["lr"], momentum=self.opt["momentum"], weight_decay=self.opt["weight_decay"],nesterov=True)
@@ -447,8 +462,6 @@ class daln_experiment_cfol(daln_experiment):
         y, f = self.classifier(x)
         y_s, y_t = y.chunk(2, dim=0)
 
-        ##
-
         cls_loss = F.cross_entropy(y_s, labels_s, reduction="none")
         transfer_loss = -self.discrepancy(f)
 
@@ -472,8 +485,6 @@ class daln_experiment_cfol(daln_experiment):
         self.lr_scheduler.step()
 
 
-
-
 def train_mcc(
     classifier = None,
     source_train = None,
@@ -489,7 +500,7 @@ def train_mcc(
             source_train=source_train, 
             target_train=target_train,
             source_val=source_val,
-            target_val=None,
+            target_val=target_val,
             opt=opt)
     else:
         experiment_ = mcc_experiment(
@@ -497,7 +508,7 @@ def train_mcc(
             source_train=source_train, 
             target_train=target_train,
             source_val=source_val,
-            target_val=None,
+            target_val=target_val,
             opt=opt)
 
     experiment_.run()
@@ -518,7 +529,7 @@ def train_mdd(
             source_train=source_train, 
             target_train=target_train,
             source_val=source_val,
-            target_val=None,
+            target_val=target_val,
             opt=opt)
     else:
         experiment_ = mdd_experiment(
@@ -526,7 +537,7 @@ def train_mdd(
             source_train=source_train, 
             target_train=target_train,
             source_val=source_val,
-            target_val=None,
+            target_val=target_val,
             opt=opt)
 
     experiment_.run()
@@ -547,7 +558,7 @@ def train_daln(
             source_train=source_train, 
             target_train=target_train,
             source_val=source_val,
-            target_val=None,
+            target_val=target_val,
             opt=opt)
     else:
         experiment_ = daln_experiment(
@@ -555,7 +566,7 @@ def train_daln(
             source_train=source_train, 
             target_train=target_train,
             source_val=source_val,
-            target_val=None,
+            target_val=target_val,
             opt=opt)
 
     experiment_.run()

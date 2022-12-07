@@ -27,7 +27,7 @@ experiment:
         source_train: visdas-t
         target_train: visdar-t
         source_val: visdas-v
-        target_val: visdar-t
+        target_val: visdar-v
   global_params:
     num_epochs: 30
     iters_per_epoch: 500

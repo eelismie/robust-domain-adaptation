@@ -272,7 +272,7 @@ class domainDataset:
 
         return train_loader, test_loader
 
-    def insertClassIndices(dataset: ImageList) -> ImageList:
+    def insertClassIndices(self, dataset: ImageList) -> ImageList:
         # required for a dataset to be compatible with cfol sampler
         if not isinstance(dataset.targets, np.ndarray):
             dataset.targets = np.array(dataset.targets)
@@ -359,6 +359,13 @@ class PACS_A(domainDataset):
         self.test_dataset = test
         self.class_names = self.dataset.classes
         self.n_classes = len(self.class_names)
+
+    def insertClassIndices(self, dataset: ImageList) -> ImageList:
+        # required for a dataset to be compatible with cfol sampler
+        if not isinstance(dataset.targets, np.ndarray):
+            dataset.targets = np.array(dataset.targets)
+        dataset.class_indices = [(dataset.targets - 1 == class_id).nonzero()[0] for class_id in range(dataset.num_classes)]
+        return dataset
         
 class PACS_P(domainDataset):
 
@@ -374,3 +381,13 @@ class PACS_P(domainDataset):
         self.test_dataset = test
         self.class_names = self.dataset.classes
         self.n_classes = len(self.class_names)
+
+    def insertClassIndices(self, dataset: ImageList) -> ImageList:
+        """
+        indexing in pacs dataset starts from 1, not 0, so the class indices need to be shifted
+        """
+        # required for a dataset to be compatible with cfol sampler
+        if not isinstance(dataset.targets, np.ndarray):
+            dataset.targets = np.array(dataset.targets)
+        dataset.class_indices = [(dataset.targets - 1 == class_id).nonzero()[0] for class_id in range(dataset.num_classes)]
+        return dataset
