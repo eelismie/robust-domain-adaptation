@@ -386,7 +386,7 @@ class mcc_experiment_cfol(mcc_experiment):
         self.sampler.batch_update(labels_s, eta_times_loss_arms)
 
         if (i % 10 == 0):
-            print("cls loss: ", cls_loss.item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
+            print("cls loss: ", cls_loss.mean().item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
 
         # compute gradient and do SGD step
         loss.backward()
@@ -437,7 +437,7 @@ class mdd_experiment_cfol(mdd_experiment):
         self.sampler.batch_update(labels_s, eta_times_loss_arms)
 
         if (i % 10 == 0):
-            print("cls loss: ", cls_loss.item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
+            print("cls loss: ", cls_loss.mean().item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
 
         # compute gradient and do SGD step
         loss.backward() 
