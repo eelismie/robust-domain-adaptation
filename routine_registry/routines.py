@@ -166,14 +166,18 @@ class experiment:
 
         global_acc_a, confusion_a = validate(self.source_val, self.classifier, self.opt)
         global_acc_b, confusion_b = validate(self.target_val, self.classifier, self.opt)
+        global_acc_c, confusion_c = validate(self.target_test, self.classifier, self.opt)
 
         f_a = plotly_confusion_matrix(confusion_a, self.opt["class_names"])
         f_b = plotly_confusion_matrix(confusion_b, self.opt["class_names"])
+        f_c = plotly_confusion_matrix(confusion_c, self.opt["class_names"])
 
         wandb.log({"source confusion": wandb.Plotly(f_a)})
-        wandb.log({"target confusion": wandb.Plotly(f_b)})
+        wandb.log({"target confusion": wandb.Plotly(f_b)}) 
+        wandb.log({"target confusion (test)": wandb.Plotly(f_c)}) 
         wandb.log({"source validation accuracy": global_acc_a})
         wandb.log({"target validation accuracy": global_acc_b})
+        wandb.log({"target test accuracy": global_acc_c})
 
         return
 

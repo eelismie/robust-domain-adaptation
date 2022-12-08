@@ -9,7 +9,6 @@ Script for generating a large amount of batch jobs at once
 base_path = "/home/mielonen/robust-domain-adaptation"
 
 base_experiments = [
-    "experiment_registry/mcc-pacs.yaml", 
     "experiment_registry/mcc-visda2017.yaml",
     "experiment_registry/mdd-visda2017.yaml"
 ]
@@ -86,4 +85,5 @@ class experimentBuilder:
             str_cmd = f"sbatch submit_job.run '{jsonString}'"
             os.system(str_cmd)
 
-experimentBuilder([base_experiments[0]]).setSeed([42]).setCfol(True).launch()
+experimentBuilder(base_experiments).setSeed([1,2,3]).setCfol(True).launch()
+experimentBuilder(base_experiments).setSeed([1,2,3]).setCfol(False).launch()
