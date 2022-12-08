@@ -156,7 +156,7 @@ class experiment:
 
     def setup(self):
         set_global_seed(self.opt)
-        #wandb.init(project="robust-domain-adaptation", config=self.opt)
+        wandb.init(project="robust-domain-adaptation", config=self.opt)
         self.classifier.train()
         self.classifier = self.classifier.to(device)
         self.optimizer = SGD(self.classifier.get_parameters(), self.opt["lr"], momentum=self.opt["momentum"], weight_decay=self.opt["weight_decay"],nesterov=True)
@@ -216,7 +216,7 @@ class mcc_experiment(experiment):
         loss = cls_loss + transfer_loss * self.opt["trade_off"]
 
         if (i % 10 == 0):
-            print(cls_loss.item(), transfer_loss.item(), loss.item())
+            print("cls loss: ", cls_loss.item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
 
         # compute gradient and do SGD step
         loss.backward()
@@ -275,7 +275,7 @@ class mdd_experiment(experiment):
         self.classifier.step()
 
         if (i % 10 == 0):
-            print(loss)
+            print("cls loss: ", cls_loss.item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
 
         # compute gradient and do SGD step
         loss.backward() 
@@ -382,7 +382,7 @@ class mcc_experiment_cfol(mcc_experiment):
         self.sampler.batch_update(labels_s, eta_times_loss_arms)
 
         if (i % 10 == 0):
-            print("loss @" + str(i) + " : " + str(loss.item()))
+            print("cls loss: ", cls_loss.item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
 
         # compute gradient and do SGD step
         loss.backward()
@@ -433,7 +433,7 @@ class mdd_experiment_cfol(mdd_experiment):
         self.sampler.batch_update(labels_s, eta_times_loss_arms)
 
         if (i % 10 == 0):
-            print(loss)
+            print("cls loss: ", cls_loss.item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
 
         # compute gradient and do SGD step
         loss.backward() 

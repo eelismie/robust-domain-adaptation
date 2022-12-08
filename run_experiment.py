@@ -1,17 +1,8 @@
-import yaml
-import click 
+import json
+from sys import argv
 from model_registry import models
 from dataset_registry import datasets
 from routine_registry import routines 
-
-
-def run_checks(dict_): 
-
-    """
-    TODO: check the signature of each of the functions and classes in dict_ and compare them against the provided args
-    """
-
-    pass 
 
 def load_models(models_list, glob_params):
 
@@ -63,7 +54,6 @@ def load_datasets(target_dataset, source_dataset, glob_params):
 def run_routines(routine_list, models, datasets, glob_params):
 
         instances = {**models, **datasets}
-
         for r in routine_list:
             routine_name = list(r.keys())[0]
             args = r[routine_name] 
@@ -72,18 +62,8 @@ def run_routines(routine_list, models, datasets, glob_params):
             routine = routines.__dict__[routine_name]
             routine(**kwargs)
 
-@click.command()
-@click.argument('filename')
-@click.argument('debug', default=False)
-def main(filename, debug):
-
-    dict_ = None
-    with open(filename, "r") as stream:
-        dict_ = yaml.safe_load(stream)
-
-    if (debug):
-        run_checks(dict_)
-
+def main():
+    dict_ = json.loads(argv[1])
     experiment = dict_["experiment"]
     datasets_list = load_datasets(experiment["target_dataset"], experiment["source_dataset"], experiment["global_params"])
     models_list = load_models(experiment["models"], experiment["global_params"])

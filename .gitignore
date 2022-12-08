@@ -3,6 +3,7 @@ image_classification/data/*
 semantic_segmentation/data/*
 dataset_registry/data/*
 model_registry/checkpoints/*
+wandb/*
 
 .vscode/*
 # Byte-compiled / optimized / DLL files
