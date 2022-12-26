@@ -1,0 +1,54 @@
+experiment:
+  source_dataset:
+    class_name: VISDA17_synthetic
+    path: /home/mielonen/robust-domain-adaptation/dataset_registry/data/visda2017
+    train:
+      name: visdas-t
+      transform_args:
+        resizing: cen.crop
+    validate:
+      name: visdas-v
+      transform_args: {}
+  target_dataset:
+    class_name: VISDA17_real
+    path: /home/mielonen/robust-domain-adaptation/dataset_registry/data/visda2017
+    train: 
+      name: visdar-t
+      transform_args:
+        resizing: cen.crop
+    validate:
+      name: visdar-v
+      transform_args: {}
+  models:
+    - tlibClassifierCdan
+  routines:
+    - train_cdan:
+        classifier: tlibClassifierCdan
+        source_train: visdas-t
+        target_train: visdar-t
+        source_val: visdas-v
+        target_val: visdar-v
+  global_params:
+    num_epochs: 30
+    seed: 42
+    iters_per_epoch: 1000
+    batch_size: 36
+    lr: 0.01
+    lr_gamma: 0.001
+    lr_decay: 0.75
+    momentum: 0.9
+    test_size: 0.25
+    weight_decay: 0.001
+    trade_off: 1.0
+    n_cpu: 8
+    n_classes: None
+    class_names: []
+    pretrain: true
+    arch: resnet101
+    no_pool: false
+    adv_validation_iters: 100
+    cfol_sampling: False
+    cfol_epoch: 4
+    bottleneck_dim: 256
+    checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
+

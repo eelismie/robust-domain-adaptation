@@ -260,24 +260,10 @@ class domainDataset:
         self.train_dataset.transform = train_transform
         self.test_dataset.transform = test_transform
 
-        train_loader = None
-        if (opt["cfol_sampling"]):
-            self.train_dataset = self.insertClassIndices(self.train_dataset)
-            sampler = ClassSampler(self.train_dataset, gamma=0.5)
-            train_loader = DataLoader(self.train_dataset, batch_size=opt["batch_size"], drop_last=True, sampler=sampler)
-        else:
-            train_loader = DataLoader(self.train_dataset, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-
+        train_loader = DataLoader(self.train_dataset, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
         test_loader = DataLoader(self.test_dataset, batch_size=opt["batch_size"], drop_last=True)
 
         return train_loader, test_loader
-
-    def insertClassIndices(self, dataset: ImageList) -> ImageList:
-        # required for a dataset to be compatible with cfol sampler
-        if not isinstance(dataset.targets, np.ndarray):
-            dataset.targets = np.array(dataset.targets)
-        dataset.class_indices = [(dataset.targets == class_id).nonzero()[0] for class_id in range(dataset.num_classes)]
-        return dataset
 
 class VISDA17_real(domainDataset):
 
