@@ -48,7 +48,7 @@ experiment:
     no_pool: false
     adv_validation_iters: 100
     cfol_sampling: False
-    cfol_epoch: 4
+    cfol_epoch: 8
     bottleneck_dim: 256
     checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
 
