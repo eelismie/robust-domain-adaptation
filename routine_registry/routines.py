@@ -194,6 +194,16 @@ class experiment:
         dataset.class_indices = [(dataset.targets == class_id).nonzero()[0] for class_id in range(dataset.num_classes)]
         return dataset
 
+    def switch_to_cfol(self):
+        compute_class_indices(self.target_train, self.classifier, self.opt)
+        source_train_sampler = ClassSampler(self.insertClassIndices(self.source_train.dataset), gamma=self.opt["cfol_gamma"])
+        target_train_sampler = ClassSampler(self.target_train.dataset)
+        self.source_train = DataLoader(self.source_train.dataset, batch_size=self.opt["batch_size"], sampler=source_train_sampler, drop_last=True)
+        self.target_train = DataLoader(self.target_train.dataset, batch_size=self.opt["batch_size"], sampler=target_train_sampler, drop_last=True)
+        self.train_source_iter = ForeverDataIterator(self.source_train)
+        self.train_target_iter = ForeverDataIterator(self.target_train)
+        self.sampler = self.source_train.sampler
+
 class mcc_experiment(experiment):
 
     """
@@ -306,16 +316,7 @@ class cdan_experiment_cfol(cdan_experiment):
 
         #reinitialize all samplers 
         if (e == self.opt["cfol_epoch"]):
-
-            print("switching to CFOL sampling...")
-            compute_class_indices(self.target_train, self.classifier, self.opt)
-            source_train_sampler = ClassSampler(self.insertClassIndices(self.source_train.dataset))
-            target_train_sampler = ClassSampler(self.target_train.dataset)
-            self.source_train = DataLoader(self.source_train.dataset, batch_size=self.opt["batch_size"], sampler=source_train_sampler, drop_last=True)
-            self.target_train = DataLoader(self.target_train.dataset, batch_size=self.opt["batch_size"], sampler=target_train_sampler, drop_last=True)
-            self.train_source_iter = ForeverDataIterator(self.source_train)
-            self.train_target_iter = ForeverDataIterator(self.target_train)
-            self.sampler = self.source_train.sampler
+            self.switch_to_cfol()
 
         for i in range(self.opt["iters_per_epoch"]):
             if (e >= self.opt["cfol_epoch"]):
@@ -432,54 +433,6 @@ class mdd_experiment(experiment):
         savedir = os.path.join(self.opt["checkpoint_path"], model_path)
         torch.save(self.classifier.state_dict(), savedir)
         return
-    
-class daln_experiment(experiment):
-
-    def setup(self):
-        super().setup()
-        self.train_source_iter = ForeverDataIterator(self.source_train)
-        self.train_target_iter = ForeverDataIterator(self.target_train)
-        self.discrepancy = NuclearWassersteinDiscrepancy(self.classifier.head).to(device)
-
-    def each_iter(self, e, i):
-        self.optimizer.zero_grad()
-
-        x_s, labels_s = next(self.train_source_iter)[:2]
-        x_t, = next(self.train_target_iter)[:1]
-
-        x_s = x_s.to(device)
-        x_t = x_t.to(device)
-        labels_s = labels_s.to(device)
-
-        # compute output
-        x = torch.cat((x_s, x_t), dim=0)
-        y, f = self.classifier(x)
-        y_s, y_t = y.chunk(2, dim=0)
-
-        cls_loss = F.cross_entropy(y_s, labels_s)
-        discrepancy_loss = -self.discrepancy(f)
-        transfer_loss = discrepancy_loss * self.opt["trade_off"]
-        loss = cls_loss + transfer_loss
-
-        if (i % 10 == 0):
-            print("loss @" + str(i) + " : " + str(loss.item()))
-
-        # compute gradient and do SGD step
-        loss.backward() 
-        self.optimizer.step()
-        self.lr_scheduler.step()
-
-    def cleanup(self):
-        super().cleanup()
-        now = datetime.now()
-        current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
-        #get the dataset class string, append to the path
-        dataset = type(self.source_train.dataset).__name__
-        model_path = current_time + dataset + "_daln.pt"
-        savedir = os.path.join(self.opt["checkpoint_path"], model_path)
-        torch.save(self.classifier.state_dict(), savedir)
-        return
-
 
 class mcc_experiment_cfol(mcc_experiment):
 
@@ -490,15 +443,7 @@ class mcc_experiment_cfol(mcc_experiment):
 
         #reinitialize all samplers 
         if (e == self.opt["cfol_epoch"]):
-
-            compute_class_indices(self.target_train, self.classifier, self.opt)
-            source_train_sampler = ClassSampler(self.insertClassIndices(self.source_train.dataset))
-            target_train_sampler = ClassSampler(self.target_train.dataset)
-            self.source_train = DataLoader(self.source_train.dataset, batch_size=self.opt["batch_size"], sampler=source_train_sampler, drop_last=True)
-            self.target_train = DataLoader(self.target_train.dataset, batch_size=self.opt["batch_size"], sampler=target_train_sampler, drop_last=True)
-            self.train_source_iter = ForeverDataIterator(self.source_train)
-            self.train_target_iter = ForeverDataIterator(self.target_train)
-            self.sampler = self.source_train.sampler
+            self.switch_to_cfol()
 
         for i in range(self.opt["iters_per_epoch"]):
             if (e >= self.opt["cfol_epoch"]):
@@ -571,16 +516,7 @@ class mdd_experiment_cfol(mdd_experiment):
 
         #reinitialize all samplers 
         if (e == self.opt["cfol_epoch"]):
-
-            print("switching to CFOL sampling...")
-            compute_class_indices(self.target_train, self.classifier, self.opt)
-            source_train_sampler = ClassSampler(self.insertClassIndices(self.source_train.dataset))
-            target_train_sampler = ClassSampler(self.target_train.dataset)
-            self.source_train = DataLoader(self.source_train.dataset, batch_size=self.opt["batch_size"], sampler=source_train_sampler, drop_last=True)
-            self.target_train = DataLoader(self.target_train.dataset, batch_size=self.opt["batch_size"], sampler=target_train_sampler, drop_last=True)
-            self.train_source_iter = ForeverDataIterator(self.source_train)
-            self.train_target_iter = ForeverDataIterator(self.target_train)
-            self.sampler = self.source_train.sampler
+            self.switch_to_cfol()
 
         for i in range(self.opt["iters_per_epoch"]):
             if (e >= self.opt["cfol_epoch"]):
@@ -642,51 +578,6 @@ class mdd_experiment_cfol(mdd_experiment):
         self.optimizer.step()
         self.lr_scheduler.step()
 
-class daln_experiment_cfol(daln_experiment):
-
-    def __init__(self, classifier=None, source_train=None, target_train=None, source_val=None, target_val=None, opt=None):
-        super().__init__(classifier, source_train, target_train, source_val, target_val, opt)
-        self.sampler = source_train.sampler
-        assert(self.opt["cfol_sampling"])
-
-    def each_iter(self, e, i):
-        self.optimizer.zero_grad()
-
-        x_s, labels_s = next(self.train_source_iter)[:2]
-        x_t, = next(self.train_target_iter)[:1]
-
-        x_s = x_s.to(device)
-        x_t = x_t.to(device)
-        labels_s = labels_s.to(device)
-
-        # compute output
-        x = torch.cat((x_s, x_t), dim=0)
-        y, f = self.classifier(x)
-        y_s, y_t = y.chunk(2, dim=0)
-
-        cls_loss = F.cross_entropy(y_s, labels_s, reduction="none")
-        transfer_loss = -self.discrepancy(f)
-
-        if self.sampler.reweight:
-            cls_loss = self.num_classes * self.sampler.batch_weight(labels_s).type_as(cls_loss) * cls_loss
-
-        loss = cls_loss.mean() + transfer_loss * self.opt["trade_off"]
-
-        class_sampler_lr = 0.0000001
-        predictions = torch.argmax(y_s, 1)
-        class_loss = predictions != labels_s
-        eta_times_loss_arms = class_sampler_lr * class_loss
-        self.sampler.batch_update(labels_s, eta_times_loss_arms)
-
-        if (i % 10 == 0):
-            print("loss @" + str(i) + " : " + str(loss.item()))
-
-        # compute gradient and do SGD step
-        loss.backward() 
-        self.optimizer.step()
-        self.lr_scheduler.step()
-
-
 def train_mcc(
     classifier = None,
     source_train = None,
@@ -744,36 +635,6 @@ def train_mdd(
 
     experiment_.run()
     return
-
-def train_daln(
-    classifier = None,
-    source_train = None,
-    target_train = None,
-    source_val = None,
-    target_val = None,
-    opt = None
-    ):
-
-    if (opt["cfol_sampling"]):
-        experiment_ = daln_experiment_cfol(
-            classifier=classifier, 
-            source_train=source_train, 
-            target_train=target_train,
-            source_val=source_val,
-            target_val=target_val,
-            opt=opt)
-    else:
-        experiment_ = daln_experiment(
-            classifier=classifier, 
-            source_train=source_train, 
-            target_train=target_train,
-            source_val=source_val,
-            target_val=target_val,
-            opt=opt)
-
-    experiment_.run()
-    return  
-
 
 def train_cdan(
     classifier = None,
