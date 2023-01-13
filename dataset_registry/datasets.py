@@ -226,12 +226,21 @@ class ClassSampler(Sampler[int]):
         return class_id
 
     def __iter__(self):
+
         for _ in range(len(self)):
-            class_id = self.sample_class_id()
-            class_indices = self.dataset.class_indices[class_id]
+            class_indices = self.get_class_indices()
             idx = torch.randint(high=len(class_indices), size=(1,), 
                                 dtype=torch.int64).item()
             yield class_indices[idx]
+
+    def get_class_indices(self):
+
+            class_indices = np.array([])
+            while (len(class_indices) == 0):                
+                class_id = self.sample_class_id()
+                class_indices = self.dataset.class_indices[class_id]
+            
+            return class_indices
 
     def __len__(self):
         return len(self.dataset)
