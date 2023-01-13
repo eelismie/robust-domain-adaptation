@@ -226,12 +226,21 @@ class ClassSampler(Sampler[int]):
         return class_id
 
     def __iter__(self):
+
         for _ in range(len(self)):
-            class_id = self.sample_class_id()
-            class_indices = self.dataset.class_indices[class_id]
+            class_indices = self.get_class_indices()
             idx = torch.randint(high=len(class_indices), size=(1,), 
                                 dtype=torch.int64).item()
             yield class_indices[idx]
+
+    def get_class_indices(self):
+
+            class_indices = np.array([])
+            while (len(class_indices) == 0):                
+                class_id = self.sample_class_id()
+                class_indices = self.dataset.class_indices[class_id]
+            
+            return class_indices
 
     def __len__(self):
         return len(self.dataset)
@@ -260,24 +269,10 @@ class domainDataset:
         self.train_dataset.transform = train_transform
         self.test_dataset.transform = test_transform
 
-        train_loader = None
-        if (opt["cfol_sampling"]):
-            self.train_dataset = self.insertClassIndices(self.train_dataset)
-            sampler = ClassSampler(self.train_dataset, gamma=0.5)
-            train_loader = DataLoader(self.train_dataset, batch_size=opt["batch_size"], drop_last=True, sampler=sampler)
-        else:
-            train_loader = DataLoader(self.train_dataset, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
-
+        train_loader = DataLoader(self.train_dataset, batch_size=opt["batch_size"], shuffle=True, drop_last=True)
         test_loader = DataLoader(self.test_dataset, batch_size=opt["batch_size"], drop_last=True)
 
         return train_loader, test_loader
-
-    def insertClassIndices(dataset: ImageList) -> ImageList:
-        # required for a dataset to be compatible with cfol sampler
-        if not isinstance(dataset.targets, np.ndarray):
-            dataset.targets = np.array(dataset.targets)
-        dataset.class_indices = [(dataset.targets == class_id).nonzero()[0] for class_id in range(dataset.num_classes)]
-        return dataset
 
 class VISDA17_real(domainDataset):
 
@@ -359,6 +354,13 @@ class PACS_A(domainDataset):
         self.test_dataset = test
         self.class_names = self.dataset.classes
         self.n_classes = len(self.class_names)
+
+    def insertClassIndices(self, dataset: ImageList) -> ImageList:
+        # required for a dataset to be compatible with cfol sampler
+        if not isinstance(dataset.targets, np.ndarray):
+            dataset.targets = np.array(dataset.targets)
+        dataset.class_indices = [(dataset.targets - 1 == class_id).nonzero()[0] for class_id in range(dataset.num_classes)]
+        return dataset
         
 class PACS_P(domainDataset):
 
@@ -374,3 +376,13 @@ class PACS_P(domainDataset):
         self.test_dataset = test
         self.class_names = self.dataset.classes
         self.n_classes = len(self.class_names)
+
+    def insertClassIndices(self, dataset: ImageList) -> ImageList:
+        """
+        indexing in pacs dataset starts from 1, not 0, so the class indices need to be shifted
+        """
+        # required for a dataset to be compatible with cfol sampler
+        if not isinstance(dataset.targets, np.ndarray):
+            dataset.targets = np.array(dataset.targets)
+        dataset.class_indices = [(dataset.targets - 1 == class_id).nonzero()[0] for class_id in range(dataset.num_classes)]
+        return dataset
