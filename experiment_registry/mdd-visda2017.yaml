@@ -29,7 +29,7 @@ experiment:
         source_val: visdas-v
         target_val: visdar-v
   global_params:
-    num_epochs: 30
+    num_epochs: 10
     iters_per_epoch: 500
     batch_size: 36
     lr: 0.004
@@ -49,8 +49,11 @@ experiment:
     no_pool: false
     adv_validation_iters: 100
     cfol_sampling: False
-    cfol_epoch: 10
+    cfol_epoch: 5
+    reweight_method: lcvar
+    cvar_alpha: 0.8
     cfol_gamma: 0.5
+    cfol_eta: 0.01
     bottleneck_dim: 1024
     checkpoint_path: /home/mielonen/robust-domain-adaptation/model_registry/checkpoints
     
