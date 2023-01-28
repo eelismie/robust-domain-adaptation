@@ -49,6 +49,8 @@ experiment:
     no_pool: false
     adv_validation_iters: 100
     cfol_sampling: False
+    reweight_method: lcvar
+    cvar_alpha: 0.8
     cfol_epoch: 10
     cfol_gamma: 0.5
     bottleneck_dim: 1024
