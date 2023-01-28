@@ -21,6 +21,7 @@ from tqdm import tqdm
 from .nwd import NuclearWassersteinDiscrepancy
 from datetime import datetime
 
+from torch import nn
 import torch.nn.functional as F
 import torch
 
@@ -28,6 +29,72 @@ import wandb
 
 cuda = True if torch.cuda.is_available() else False
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') 
+
+class LHCVaRLoss(nn.Module):
+
+    def __init__(self, alpha: torch.tensor, strat='max'):
+        super(LHCVaRLoss, self).__init__()
+        self.alpha = nn.Parameter(alpha.cuda(), requires_grad=False)
+        self.threshold = nn.Parameter(torch.tensor(10., dtype=torch.float).cuda(),
+                                      requires_grad=True)
+
+        self.prev_loss = {}
+        self.strat = strat
+
+    def forward(self, losses, labels):
+        device = losses.device
+
+        prev_loss = {}
+        inner_term = 0
+        label_set = labels.unique()
+        mean_class_losses = []
+        class_cts = []
+        for label in label_set:
+            label_p = torch.mean((labels == label).float())
+            class_losses = losses[labels == label]
+            mean_class_loss = torch.mean(class_losses)
+            mean_class_losses.append(mean_class_loss)
+            class_cts.append(label_p)
+
+        mean_class_losses = torch.stack(mean_class_losses)
+        class_cts = torch.stack(class_cts)
+
+        c_losses = []
+        for idx in range(label_set.shape[0]):
+            mcl = mean_class_losses[idx].item()
+            self.prev_loss[label_set[idx].item()] = mcl
+            c_losses.append(mcl)
+
+        if self.strat == 'analytic':
+            weight_sum = 0
+            best_lambda = 0
+            factors = class_cts * self.alpha[label_set]
+            for idx, loss in sorted(enumerate(c_losses), key=lambda x: -x[1]):
+                if weight_sum + factors[idx].item() >= 1:
+                    best_lambda = loss
+                else:
+                    weight_sum += factors[idx].item()
+            self.threshold.data = torch.tensor(best_lambda,
+                                               dtype=torch.float,
+                                               device=self.threshold.device)
+        else:
+            max_mean_class_loss = torch.max(mean_class_losses).item()
+            if self.threshold.item() > max_mean_class_loss:
+                self.threshold.data = torch.tensor(
+                    max_mean_class_loss,
+                    dtype=torch.float,
+                    device=self.threshold.device)
+        inner_term = class_cts * F.relu(mean_class_losses -
+                                        self.threshold) / self.alpha[label_set]
+        return torch.sum(inner_term) + self.threshold * losses.shape[0]
+
+class LCVaRLoss(LHCVaRLoss):
+    def __init__(self,
+                 classes: int,
+                 alpha: float,
+                 strat='max'):
+        alphas = torch.zeros(classes).fill_(alpha)
+        super(LCVaRLoss, self).__init__(alphas, strat)
 
 def set_global_seed(args):
     torch.backends.cudnn.deterministic = True
@@ -246,16 +313,37 @@ class mcc_experiment(experiment):
         self.optimizer.step()
         self.lr_scheduler.step()
 
-    def cleanup(self):
-        super().cleanup()
-        now = datetime.now()
-        current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
-        dataset = type(self.source_train.dataset).__name__
-        model_path = current_time + dataset + "_mcc.pt"
-        savedir = os.path.join(self.opt["checkpoint_path"], model_path)
-        torch.save(self.classifier.state_dict(), savedir)
-        return
+class mcc_experiment_lcvar(mcc_experiment):
 
+    def setup(self):
+        super().setup()
+        alpha = torch.tensor(self.opt["cvar_alpha"]).to(device)
+        self.lcvar_loss = LCVaRLoss(classes=self.num_classes,
+                    alpha=alpha, 
+                    strat='analytic')
+
+    def each_iter(self, e, i):
+        self.optimizer.zero_grad()
+        x_s, labels_s = next(self.train_source_iter)[:2]
+        x_t, = next(self.train_target_iter)[:1]
+
+        x_s = x_s.to(device)
+        x_t = x_t.to(device)
+        labels_s = labels_s.to(device)
+
+        # compute output
+        x = torch.cat((x_s, x_t), dim=0)
+        y, f = self.classifier(x)
+        y_s, y_t = y.chunk(2, dim=0)
+
+        cls_loss = F.cross_entropy(y_s, labels_s, reduction="none")
+        transfer_loss = self.mcc_loss(y_t)
+
+        loss = self.lcvar_loss(cls_loss, labels_s) + transfer_loss * self.opt["trade_off"]
+
+        loss.backward()
+        self.optimizer.step()
+        self.lr_scheduler.step()
 
 class cdan_experiment(experiment):
 
@@ -310,6 +398,39 @@ class cdan_experiment(experiment):
         self.optimizer.step()
         self.lr_scheduler.step()    
 
+class cdan_experiment_lcvar(cdan_experiment):
+
+    def setup(self):
+        super().setup()
+        alpha = torch.tensor(self.opt["cvar_alpha"]).to(device)
+        self.lcvar_loss = LCVaRLoss(classes=self.num_classes,
+                    alpha=alpha, 
+                    strat='analytic')
+
+    def each_iter(self, e, i):
+        x_s, labels_s = next(self.train_source_iter)[:2]
+        x_t, = next(self.train_target_iter)[:1]
+
+        x_s = x_s.to(device)
+        x_t = x_t.to(device)
+        labels_s = labels_s.to(device)
+
+        # compute output
+        x = torch.cat((x_s, x_t), dim=0)
+        y, f = self.classifier(x)
+        y_s, y_t = y.chunk(2, dim=0)
+        f_s, f_t = f.chunk(2, dim=0)
+
+        cls_loss = F.cross_entropy(y_s, labels_s, reduction="none")
+        transfer_loss = self.domain_adv(y_s, f_s, y_t, f_t)
+        loss = self.lcvar_loss(cls_loss, labels_s) + transfer_loss * self.opt["trade_off"]
+
+        # compute gradient and do SGD step
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        self.lr_scheduler.step() 
+
 class cdan_experiment_cfol(cdan_experiment):
 
     def each_epoch(self, e):
@@ -360,14 +481,15 @@ class cdan_experiment_cfol(cdan_experiment):
 
         loss = cls_loss.mean() + transfer_loss * self.opt["trade_off"]
 
-        class_sampler_lr = 0.0000001
+        class_sampler_lr = self.opt["cfol_eta"]
         predictions = torch.argmax(y_s, 1)
         class_loss = predictions != labels_s
         eta_times_loss_arms = class_sampler_lr * class_loss
         self.sampler.batch_update(labels_s, eta_times_loss_arms)
 
         if (i % 10 == 0):
-            print("cls loss: ", cls_loss.mean().item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
+            print("sampling distribution:")
+            print(self.sampler.p)
 
         # compute gradient and do SGD step
         self.optimizer.zero_grad()
@@ -424,15 +546,47 @@ class mdd_experiment(experiment):
         self.optimizer.step()
         self.lr_scheduler.step()
 
-    def cleanup(self):
-        super().cleanup()
-        now = datetime.now()
-        current_time = now.strftime("%D:%H:%M:%S").replace("/","").replace(":","")
-        dataset = type(self.source_train.dataset).__name__
-        model_path = current_time + dataset + "_mdd.pt"
-        savedir = os.path.join(self.opt["checkpoint_path"], model_path)
-        torch.save(self.classifier.state_dict(), savedir)
-        return
+class mdd_experiment_lcvar(mdd_experiment):
+
+    def setup(self):
+        super().setup()
+        alpha = torch.tensor(self.opt["cvar_alpha"]).to(device)
+        print(alpha)
+        self.lcvar_loss = LCVaRLoss(classes=self.num_classes,
+                    alpha=alpha, 
+                    strat='analytic')
+
+    def each_iter(self, e, i):
+        self.optimizer.zero_grad()
+
+        x_s, labels_s = next(self.train_source_iter)[:2]
+        x_t, = next(self.train_target_iter)[:1]
+
+        x_s = x_s.to(device)
+        x_t = x_t.to(device)
+        labels_s = labels_s.to(device)
+
+        # compute output
+        x = torch.cat((x_s, x_t), dim=0)
+        outputs, outputs_adv = self.classifier(x)
+        y_s, y_t = outputs.chunk(2, dim=0)
+        y_s_adv, y_t_adv = outputs_adv.chunk(2, dim=0)
+
+        # compute cross entropy loss on source domain
+        cls_loss = F.cross_entropy(y_s, labels_s, reduction="none")
+        transfer_loss = -self.mdd(y_s, y_s_adv, y_t, y_t_adv)
+
+        loss = self.lcvar_loss(cls_loss, labels_s) + transfer_loss * self.opt["trade_off"]
+
+        self.classifier.step()
+
+        # compute gradient and do SGD step
+        loss.backward() 
+        self.optimizer.step()
+        self.lr_scheduler.step()
+
+
+
 
 class mcc_experiment_cfol(mcc_experiment):
 
@@ -489,14 +643,16 @@ class mcc_experiment_cfol(mcc_experiment):
 
         loss = cls_loss.mean() + transfer_loss * self.opt["trade_off"]
 
-        class_sampler_lr = 0.0000001
+        class_sampler_lr = self.opt["cfol_eta"]
         predictions = torch.argmax(y_s, 1)
         class_loss = predictions != labels_s
         eta_times_loss_arms = class_sampler_lr * class_loss
         self.sampler.batch_update(labels_s, eta_times_loss_arms)
 
+
         if (i % 10 == 0):
-            print("cls loss: ", cls_loss.mean().item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
+            print("sampling distribution:")
+            print(self.sampler.p)
 
         # compute gradient and do SGD step
         loss.backward()
@@ -564,14 +720,14 @@ class mdd_experiment_cfol(mdd_experiment):
         loss = cls_loss.mean() + transfer_loss * self.opt["trade_off"]
         self.classifier.step()
 
-        class_sampler_lr = 0.0000001
+        class_sampler_lr = self.opt["cfol_eta"]
         predictions = torch.argmax(y_s, 1)
         class_loss = predictions != labels_s
         eta_times_loss_arms = class_sampler_lr * class_loss
         self.sampler.batch_update(labels_s, eta_times_loss_arms)
 
         if (i % 10 == 0):
-            print("cls loss: ", cls_loss.mean().item(), " trans loss: ", transfer_loss.item(), " total loss: ", loss.item())
+            print(self.sampler.p)
 
         # compute gradient and do SGD step
         loss.backward() 
@@ -587,7 +743,7 @@ def train_mcc(
     opt = None
     ):
 
-    if (opt["cfol_sampling"]):
+    if (opt["reweight_method"] == "cfol"):
         experiment_ = mcc_experiment_cfol(
             classifier=classifier, 
             source_train=source_train, 
@@ -595,6 +751,14 @@ def train_mcc(
             source_val=source_val,
             target_val=target_val,
             opt=opt)
+    elif(opt["reweight_method"] == "lcvar"):
+        experiment_ = mcc_experiment_lcvar(
+            classifier=classifier, 
+            source_train=source_train, 
+            target_train=target_train,
+            source_val=source_val,
+            target_val=target_val,
+            opt=opt)   
     else:
         experiment_ = mcc_experiment(
             classifier=classifier, 
@@ -616,8 +780,16 @@ def train_mdd(
     opt = None
     ):
 
-    if (opt["cfol_sampling"]):
+    if (opt["reweight_method"] == "cfol"):
         experiment_ = mdd_experiment_cfol(
+            classifier=classifier, 
+            source_train=source_train, 
+            target_train=target_train,
+            source_val=source_val,
+            target_val=target_val,
+            opt=opt)
+    elif (opt["reweight_method"] == "lcvar"):
+        experiment_ = mdd_experiment_lcvar(
             classifier=classifier, 
             source_train=source_train, 
             target_train=target_train,
@@ -645,7 +817,7 @@ def train_cdan(
     opt = None
     ):
 
-    if (opt["cfol_sampling"]):
+    if (opt["reweight_method"] == "cfol"):
         experiment_ = cdan_experiment_cfol(
             classifier=classifier, 
             source_train=source_train, 
@@ -653,6 +825,14 @@ def train_cdan(
             source_val=source_val,
             target_val=target_val,
             opt=opt)
+    elif (opt["reweight_method"] == "lcvar"):
+        experiment_ = cdan_experiment_lcvar(
+            classifier=classifier, 
+            source_train=source_train, 
+            target_train=target_train,
+            source_val=source_val,
+            target_val=target_val,
+            opt=opt)   
     else:
         experiment_ = cdan_experiment(
             classifier=classifier, 
